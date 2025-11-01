@@ -220,9 +220,7 @@ class WiFiTracker:
             current_ssid = (
                 current_measurement.get("ssid") if current_measurement else None
             )
-            print("\n🔍 Debug - Current Measurement:", current_measurement)
             if current_measurement and current_ssid:
-                print(f"🔍 Updating usage for SSID: {current_ssid}")
                 self.data_manager.update_usage(
                     current_ssid,
                     current_measurement.get("rx_bytes", 0),
@@ -231,14 +229,6 @@ class WiFiTracker:
                     current_measurement.get("rx_rate", 0),
                     current_measurement.get("tx_rate", 0),
                 )
-            print(
-                "\n🔍 Debug - Usage Data Keys:",
-                (
-                    list(self.data_manager.usage_data.keys())
-                    if hasattr(self.data_manager, "usage_data")
-                    else "No usage_data"
-                ),
-            )
             self.display_manager.print_detailed_stats(
                 self.data_manager.usage_data,
                 self.data_manager.limits_data,
@@ -395,7 +385,7 @@ Examples:
     )
 
     # Mode selection (mutually exclusive)
-    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group = parser.add_mutually_exclusive_group(required=False)
     mode_group.add_argument(
         "--daemon", "-d", action="store_true", help="Run in daemon mode"
     )
@@ -444,6 +434,11 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # If no mode specified, show help
+    if not any([args.daemon, args.watch, args.status, args.status_all, args.top_apps, args.stop, args.limit, args.remove_limit, args.cleanup is not None]):
+        parser.print_help()
+        sys.exit(0)
 
     # Create tracker instance
     tracker = WiFiTracker(args.interface, args.interval)
