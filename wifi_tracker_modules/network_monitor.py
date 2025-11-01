@@ -12,7 +12,6 @@ from typing import Dict, Optional, Tuple, Any
 
 class NetworkMonitor:
     """Monitors network interfaces and collects usage statistics"""
-    
     def __init__(self, interface: str = None, interval: float = 0.5):
         self.interface = interface or self.detect_wireless_interface()
         self.interval = interval
@@ -82,8 +81,21 @@ class NetworkMonitor:
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
             pass
         
+        # Alternative method using nmcli
+        try:
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'ACTIVE,SSID', 'dev', 'wifi'],
+                capture_output=True, text=True, timeout=3
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.strip().split('\n'):
+                    if line.startswith('yes:'):
+                        return line.split(':')[1]
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+            pass
+        
         return None
-    
+
     def get_signal_quality(self) -> Dict[str, Any]:
         """Get WiFi signal quality information"""
         quality_info = {
