@@ -14,69 +14,98 @@ A comprehensive tool for monitoring WiFi usage with daemon support, real-time st
 
 ## Installation
 
-1. Clone or download the repository.
-2. Run the installation script:
-   ```bash
-   ./install.sh
-   ```
-3. Source your shell config or restart your terminal:
-    ```bash
-    source ~/.bashrc  # or ~/.zshrc, or for Fish: source ~/.config/fish/config.fish
-    ```
+The recommended way to install WiFi Tracker is using `pipx`. This ensures it runs in an isolated environment and doesn't conflict with system packages.
 
-The script will:
-- Detect your shell (bash or zsh).
-- Make the `wifi-tracker` script executable.
-- Copy it to `~/.local/share/bin`.
-- Add the directory to your PATH.
+1. Install `pipx` if you haven't already:
+
+   ```bash
+   sudo apt install pipx  # Debian/Ubuntu
+   pipx ensurepath
+   ```
+
+2. Install WiFi Tracker:
+
+   ```bash
+   pipx install .
+   ```
+
+This will automatically install dependencies (`psutil`, `rich`) and make the `wifi-tracker` command available in your PATH.
+
+To upgrade later:
+
+```bash
+pipx upgrade wifi-tracker
+```
+
+To uninstall:
+
+```bash
+pipx uninstall wifi-tracker
+```
 
 ## Usage
 
 ### Basic Commands
 
 - **Start Daemon Mode** (background monitoring):
+
   ```bash
   wifi-tracker --daemon
   ```
 
 - **Watch Mode** (interactive display):
+
   ```bash
   wifi-tracker --watch
   ```
 
 - **Show Status** (current statistics):
+
   ```bash
   wifi-tracker --status
   ```
 
 - **Stop Daemon**:
+
   ```bash
   wifi-tracker --stop
   ```
 
 - **Set Data Limit** (e.g., 1GB monthly for "MyWiFi"):
+
   ```bash
   wifi-tracker --limit MyWiFi 1GB monthly
   ```
 
 - **Remove Limit**:
+
   ```bash
   wifi-tracker --remove-limit MyWiFi
   ```
 
 - **View All Statistics** (last 90 days):
+
   ```bash
   wifi-tracker --status-all
   ```
 
 - **Top Network Apps**:
+
   ```bash
   wifi-tracker --top-apps
   ```
 
 - **Clean Old Data** (e.g., older than 30 days):
+
   ```bash
   wifi-tracker --cleanup 30
+  ```
+
+- **Install/Remove Service (Systemd)**:
+
+  ```bash
+  wifi-tracker --install-service
+  wifi-tracker --remove-service
   ```
 
 ### Options
@@ -93,12 +122,15 @@ The script will:
   - `network_monitor.py`: Monitors network interfaces and collects stats.
   - `process_manager.py`: Manages processes and daemon operations.
   - `display_manager.py`: Handles display formatting and output.
+  - `notification_manager.py`: Handles system notifications.
 
 ## Requirements
 
 - Python 3.6+
 - Linux with wireless tools (`iwconfig`, `iwgetid`)
-- `psutil` library (install via `pip install psutil`)
+- `psutil` and `rich` libraries.
+  - Recommended: `uv pip install psutil rich`
+  - Or: `pip install psutil rich`
 
 ## Data Storage
 

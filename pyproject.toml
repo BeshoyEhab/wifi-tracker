@@ -1,0 +1,17 @@
+[project]
+name = "wifi-tracker"
+version = "0.1.0"
+description = "Enhanced WiFi Usage Tracker"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "psutil>=7.2.2",
+    "rich>=14.3.2",
+]
+
+[project.scripts]
+wifi-tracker = "wifi_tracker_modules.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

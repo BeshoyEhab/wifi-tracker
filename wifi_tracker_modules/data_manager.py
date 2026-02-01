@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Data Manager Module for WiFi Tracker
 Handles data persistence, validation, and management
@@ -6,20 +5,39 @@ Handles data persistence, validation, and management
 
 import json
 import os
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import NoneType
 from typing import Dict, Any, Optional
+
+from wifi_tracker_modules.config import Config
 
 
 class DataManager:
-    """Manages WiFi usage data persistence and validation"""
+    """
+    Manages WiFi usage data persistence and validation.
+
+    Attributes:
+        data_file (Path): Path to the main usage data JSON file.
+        limits_file (Path): Path to the limits data JSON file.
+        usage_data (Dict): In-memory storage of usage data.
+        limits_data (Dict): In-memory storage of limits data.
+    """
     
-    def __init__(self, data_file: str = None):
-        self.data_file = Path(data_file) if data_file else Path.home() / ".cache" / "wifi_usage.json"
-        self.limits_file = Path.home() / ".cache" / "wifi_limits.json"
+    def __init__(self, data_file: Optional[str] = None, limits_file: Optional[str] = None):
+        """
+        Initialize the Data Manager.
+
+        Args:
+            data_file (str, optional): Path to the WiFi usage data file.
+            limits_file (str, optional): Path to the data limits file.
+        """
+        self.data_file = Path(data_file) if data_file else Config.get_data_file()
+        self.limits_file = Path(limits_file) if limits_file else Config.get_limits_file()
         
-        # Ensure cache directory exists
-        self.data_file.parent.mkdir(exist_ok=True)
+        # Check for legacy data and migrate if needed
+        self._check_and_migrate_legacy_data()
         
         # Initialize data structures
         self.usage_data = {}
@@ -30,8 +48,35 @@ class DataManager:
         self.load_data()
         self.load_limits()
     
+    def _check_and_migrate_legacy_data(self) -> None:
+        """
+        Check for legacy data in ~/.cache and migrate to new XDG location if found.
+        Only migrates if the new data file doesn't already exist.
+        """
+        if self.data_file.exists():
+            return
+            
+        legacy_data = Path.home() / ".cache" / "wifi_usage.json"
+        legacy_limits = Path.home() / ".cache" / "wifi_limits.json"
+        
+        if legacy_data.exists():
+            print(f"📦 Migrating data from {legacy_data} to {self.data_file}...")
+            try:
+                self.data_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(legacy_data), str(self.data_file))
+                if legacy_limits.exists():
+                    shutil.move(str(legacy_limits), str(self.limits_file))
+                print("✅ Migration successful")
+            except Exception as e:
+                print(f"❌ Migration failed: {e}")
+
     def load_data(self) -> Dict[str, Any]:
-        """Load usage data from file with validation and migration"""
+        """
+        Load usage data from file with validation and migration.
+
+        Returns:
+            Dict[str, Any]: The loaded usage data.
+        """
         try:
             if self.data_file.exists():
                 with open(self.data_file, 'r') as f:
@@ -58,7 +103,12 @@ class DataManager:
         return self.usage_data
     
     def load_limits(self) -> Dict[str, Any]:
-        """Load limits data from file"""
+        """
+        Load limits data from file.
+
+        Returns:
+            Dict[str, Any]: The loaded limits data.
+        """
         try:
             if self.limits_file.exists():
                 with open(self.limits_file, 'r') as f:
@@ -73,12 +123,21 @@ class DataManager:
         return self.limits_data
     
     def save_data(self) -> bool:
-        """Save usage data to file"""
+        """
+        Save usage data to file.
+
+        Returns:
+            bool: True if save was successful, False otherwise.
+        """
         try:
             # Create backup of existing file
             if self.data_file.exists():
                 backup_file = self.data_file.with_suffix('.json.bak')
-                self.data_file.rename(backup_file)
+                # Use replace (atomic) instead of rename/rename to avoid issues
+                try:
+                    shutil.copy2(self.data_file, backup_file)
+                except OSError:
+                    pass # Ignore backup errors if necessary
             
             # Prepare data with metadata
             data_to_save = self.usage_data.copy()
@@ -95,7 +154,12 @@ class DataManager:
             return False
     
     def save_limits(self) -> bool:
-        """Save limits data to file"""
+        """
+        Save limits data to file.
+
+        Returns:
+            bool: True if save was successful, False otherwise.
+        """
         try:
             with open(self.limits_file, 'w') as f:
                 json.dump(self.limits_data, f, indent=2)
@@ -106,7 +170,15 @@ class DataManager:
             return False
     
     def _validate_and_migrate_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and migrate data structure for backward compatibility"""
+        """
+        Validate and migrate data structure for backward compatibility.
+
+        Args:
+            data (Dict[str, Any]): The raw loaded data.
+
+        Returns:
+            Dict[str, Any]: Validated and structured data.
+        """
         validated_data = {}
         
         for ssid, ssid_data in data.items():
@@ -154,8 +226,18 @@ class DataManager:
         return validated_data
     
     def update_usage(self, ssid: str, rx_bytes: int, tx_bytes: int, 
-                    timestamp: datetime = None, rx_rate: float = 0, tx_rate: float = 0) -> None:
-        """Update usage data for a specific SSID using delta-based tracking"""
+                    timestamp: Optional[datetime] = None, rx_rate: float = 0, tx_rate: float = 0) -> None:
+        """
+        Update usage data for a specific SSID using delta-based tracking.
+
+        Args:
+            ssid (str): The SSID name.
+            rx_bytes (int): Current total RX bytes from interface.
+            tx_bytes (int): Current total TX bytes from interface.
+            timestamp (datetime, optional): Measurement timestamp. Defaults to now.
+            rx_rate (float, optional): Current download rate. Defaults to 0.
+            tx_rate (float, optional): Current upload rate. Defaults to 0.
+        """
         if timestamp is None:
             timestamp = datetime.now()
         
@@ -263,7 +345,17 @@ class DataManager:
                 accuracy_stats['successful_measurements'] / accuracy_stats['total_measurements'])
     
     def get_session_usage(self, ssid: str, current_rx: int, current_tx: int) -> tuple:
-        """Get current session usage for an SSID"""
+        """
+        Get current session usage for an SSID.
+
+        Args:
+            ssid (str): The SSID name.
+            current_rx (int): Current interface RX bytes.
+            current_tx (int): Current interface TX bytes.
+
+        Returns:
+            tuple: (session_rx, session_tx) usage in bytes.
+        """
         if ssid not in self.usage_data:
             return 0, 0
         
@@ -277,8 +369,16 @@ class DataManager:
         
         return session_rx, session_tx
     
-    def get_usage_summary(self, ssid: str = None) -> Dict[str, Any]:
-        """Get usage summary for specific SSID or all SSIDs"""
+    def get_usage_summary(self, ssid: str = "") -> Dict[str, Any]:
+        """
+        Get usage summary for specific SSID or all SSIDs.
+
+        Args:
+            ssid (str, optional): Specific SSID to summarize. Defaults to None (all SSIDs).
+
+        Returns:
+            Dict[str, Any]: Summary dictionary.
+        """
         if ssid:
             return self.usage_data.get(ssid, {})
         
@@ -308,7 +408,15 @@ class DataManager:
         return summary
     
     def cleanup_old_data(self, days_to_keep: int = 30) -> int:
-        """Clean up old daily data beyond specified days"""
+        """
+        Clean up old daily data beyond specified days.
+
+        Args:
+            days_to_keep (int, optional): Number of days to keep. Defaults to 30.
+
+        Returns:
+            int: Number of day records removed.
+        """
         cutoff_date = datetime.now() - timedelta(days=days_to_keep)
         cutoff_str = cutoff_date.strftime('%Y-%m-%d')
         
@@ -333,7 +441,9 @@ class DataManager:
         return removed_count
     
     def _auto_cleanup_if_needed(self) -> None:
-        """Automatically cleanup old data if it's been more than a day since last cleanup"""
+        """
+        Automatically cleanup old data if it's been more than a day since last cleanup.
+        """
         if not hasattr(self, '_metadata'):
             self._metadata = {}
         
@@ -357,9 +467,29 @@ class DataManager:
             if removed_count > 0:
                 print(f"🧹 Auto-cleanup: Removed {removed_count} old daily records (>90 days)")
                 self.save_data()  # Save after cleanup
+
+    def update_limit_status(self, ssid: str, key: str, value: Any) -> None:
+        """
+        Update a specific status flag for an SSID limit.
+
+        Args:
+            ssid (str): The SSID to update.
+            key (str): The status key (e.g., 'notified_80').
+            value (Any): The value to set.
+        """
+        if ssid in self.limits_data:
+            self.limits_data[ssid][key] = value
+            self.save_limits()
     
     def set_limit(self, ssid: str, limit_bytes: int, interval: str = 'monthly') -> None:
-        """Set data limit for specific SSID"""
+        """
+        Set data limit for specific SSID.
+
+        Args:
+            ssid (str): SSID to set limit for.
+            limit_bytes (int): Limit in bytes.
+            interval (str, optional): Interval ('daily', 'weekly', 'monthly'). Defaults to 'monthly'.
+        """
         self.limits_data[ssid] = {
             'limit': limit_bytes,
             'interval': interval,
@@ -368,11 +498,27 @@ class DataManager:
         self.save_limits()
     
     def get_limit(self, ssid: str) -> Optional[Dict[str, Any]]:
-        """Get data limit for specific SSID"""
+        """
+        Get data limit for specific SSID.
+
+        Args:
+            ssid (str): SSID to get limit for.
+
+        Returns:
+            Optional[Dict[str, Any]]: Limit data or None.
+        """
         return self.limits_data.get(ssid)
     
     def remove_limit(self, ssid: str) -> bool:
-        """Remove data limit for specific SSID"""
+        """
+        Remove data limit for specific SSID.
+
+        Args:
+            ssid (str): SSID to remove limit for.
+
+        Returns:
+            bool: True if limit was removed, False if not found.
+        """
         if ssid in self.limits_data:
             del self.limits_data[ssid]
             self.save_limits()

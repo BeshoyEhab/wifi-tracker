@@ -1,31 +1,52 @@
 """
 Display Manager Module for WiFi Tracker
-Handles all display formatting and output operations
+Handles all display formatting and output operations using Rich
 """
 
 import os
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
+from threading import Lock
+
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich.text import Text
+    from rich.align import Align
+    from rich.progress import Progress, BarColumn, TextColumn
+    from rich.box import ROUNDED
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
+    # Fallback to standard print if rich is not available (though we expect it to be)
 
 
 class DisplayManager:
-    """Manages display formatting and output for WiFi tracker"""
+    """Manages display formatting and output for WiFi tracker using Rich"""
     
     def __init__(self):
+        self.console = Console() if RICH_AVAILABLE else None
         self.last_display_time = 0
         self.display_cache = {}
+        self._lock = Lock()
     
     def clear_screen(self) -> None:
         """Clear the terminal screen"""
-        os.system('clear' if os.name == 'posix' else 'cls')
+        if RICH_AVAILABLE:
+            self.console.clear()
+        else:
+            os.system('clear' if os.name == 'posix' else 'cls')
     
     def format_bytes(self, bytes_value: int) -> str:
         """Format bytes into human-readable string"""
         if bytes_value == 0:
             return "0 B"
         
-        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
         size = float(bytes_value)
         unit_index = 0
         
@@ -56,146 +77,7 @@ class DisplayManager:
             hours = total_seconds // 3600
             minutes = (total_seconds % 3600) // 60
             return f"{hours}h {minutes}m"
-    
-    def create_progress_bar(self, percentage: float, width: int = 20) -> str:
-        """Create a text-based progress bar"""
-        filled = int(round(width * percentage / 100))
-        return f"[{'█' * filled}{'░' * (width - filled)}]"
-        
-    def format_bytes(self, bytes_num: int) -> str:
-        """Format bytes to human-readable format"""
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if bytes_num < 1024.0:
-                if unit in ['B']:
-                    return f"{int(bytes_num)} {unit}"
-                return f"{bytes_num:.1f} {unit}"
-            bytes_num /= 1024.0
-        return f"{bytes_num:.1f} PB"
-        
-    def print_top_network_apps(self, apps: list) -> None:
-        """Print top network apps in a formatted table"""
-        if not apps:
-            print("\nNo network activity detected.")
-            return
             
-        print("\n🌐 Top Network Applications")
-        print("=" * 50)
-        print(f"{'PID':<8} {'User':<12} {'App Name':<20} {'Sent':<12} {'Received':<12} {'Total':<12} Connections")
-        print("-" * 80)
-        
-        for app in apps:
-            pid = app.get('pid', 'N/A')
-            user = app.get('user', 'unknown')[:10]  # Limit username length
-            name = app.get('name', 'unknown')[:18]  # Limit app name length
-            sent = self.format_bytes(app.get('bytes_sent', 0))
-            recv = self.format_bytes(app.get('bytes_recv', 0))
-            total = self.format_bytes(app.get('total_bytes', 0))
-            conns = app.get('connections', 0)
-            
-            print(f"{pid:<8} {user:<12} {name:<20} {sent:<12} {recv:<12} {total:<12} {conns}")
-        
-        print("=" * 80)
-    
-    def build_header(self, interface: str, pid: int) -> List[str]:
-        """Build display header"""
-        lines = []
-        lines.append("=" * 80)
-        lines.append("📊 Enhanced WiFi Usage Statistics")
-        lines.append("=" * 80)
-        lines.append(f"🔧 Interface: {interface} | PID: {pid}")
-        lines.append("=" * 80)
-        lines.append("")
-        return lines
-    
-    def build_status_info(self, current_time: datetime, uptime: timedelta, 
-                         update_count: int, current_ssid: str, last_save_time: float) -> List[str]:
-        """Build status information section"""
-        lines = []
-        
-        current_time_str = current_time.strftime("%H:%M:%S.%f")[:-3]
-        lines.append(f"⏰ Time: {current_time_str} | Uptime: {self.format_duration(uptime)} | Updates: {update_count}")
-        
-        status_emoji = "🟢" if current_ssid else "🔴"
-        lines.append(f"🌐 Connected: {current_ssid or 'None'} {status_emoji}")
-        lines.append(f"💾 Last save: {time.ctime(last_save_time) if last_save_time else 'Never'}")
-        lines.append("")
-        
-        return lines
-    
-    def build_network_details(self, ssid: str, ssid_data: Dict[str, Any], 
-                            rx_rate: float, tx_rate: float, session_rx: int = 0, session_tx: int = 0) -> List[str]:
-        """Build network details section"""
-        lines = []
-        
-        # Calculate totals and daily usage
-        total_rx = ssid_data.get('total_rx', 0)
-        total_tx = ssid_data.get('total_tx', 0)
-        total_usage = total_rx + total_tx
-        
-        today = datetime.now().strftime('%Y-%m-%d')
-        daily_data = ssid_data.get('daily', {}).get(today, {})
-        daily_rx = daily_data.get('rx', 0)
-        daily_tx = daily_data.get('tx', 0)
-        daily_total = daily_rx + daily_tx
-        
-        # Usage statistics
-        lines.append(f"📊 Total: {self.format_bytes(total_usage)} (↓{self.format_bytes(total_rx)} ↑{self.format_bytes(total_tx)})")
-        lines.append(f"📅 Today: {self.format_bytes(daily_total)} (↓{self.format_bytes(daily_rx)} ↑{self.format_bytes(daily_tx)})")
-        lines.append(f"⚡ Rates: ↓{self.format_rate(rx_rate)} ↑{self.format_rate(tx_rate)}")
-        
-        # Session usage
-        session_total = session_rx + session_tx
-        if session_total > 0:
-            lines.append(f"⏱️ Session: {self.format_bytes(session_total)} (↓{self.format_bytes(session_rx)} ↑{self.format_bytes(session_tx)})")
-        else:
-            lines.append("⏱️ Session: Just connected")
-        
-        # Connection info
-        connection_count = ssid_data.get('connection_count', 0)
-        first_seen = ssid_data.get('first_seen', 'Unknown')
-        if first_seen != 'Unknown':
-            try:
-                first_seen_dt = datetime.fromisoformat(first_seen)
-                first_seen = first_seen_dt.strftime('%Y-%m-%d')
-            except (ValueError, TypeError):
-                pass
-        
-        lines.append(f"🔗 Connections: {connection_count} | First seen: {first_seen}")
-        
-        return lines
-    
-    def build_limits_section(self, ssid: str, ssid_data: Dict[str, Any], 
-                           limits_data: Dict[str, Any]) -> List[str]:
-        """Build data limits section"""
-        lines = []
-        
-        if ssid not in limits_data:
-            return lines
-        
-        limit_info = limits_data[ssid]
-        limit_bytes = limit_info.get('limit', 0)
-        interval = limit_info.get('interval', 'monthly')
-        
-        if limit_bytes <= 0:
-            return lines
-        
-        # Calculate period usage
-        period_usage = self._calculate_period_usage(ssid_data, interval)
-        usage_percent = min(100, (period_usage / limit_bytes) * 100) if limit_bytes > 0 else 0
-        
-        lines.append("")
-        lines.append(f"📊 {interval.capitalize()} Limit ({usage_percent:.1f}%): {self.format_bytes(period_usage)}/{self.format_bytes(limit_bytes)}")
-        
-        # Progress bar
-        progress_bar = self.create_progress_bar(usage_percent)
-        lines.append(progress_bar)
-        
-        # Warning if approaching limit
-        if usage_percent > 80:
-            lines.append(f"⚠️ WARNING: {100 - usage_percent:.1f}% remaining")
-        
-        return lines
-    
     def _calculate_period_usage(self, ssid_data: Dict[str, Any], interval: str) -> int:
         """Calculate usage for the specified interval"""
         period_usage = 0
@@ -230,234 +112,300 @@ class DisplayManager:
                     break
         
         return period_usage
-    
+
     def build_watch_display(self, interface: str, pid: int, current_time: datetime,
                           uptime: timedelta, update_count: int, current_ssid: str,
                           last_save_time: float, ssid_data: Dict[str, Any],
                           rx_rate: float, tx_rate: float, limits_data: Dict[str, Any],
-                          interval: float, session_rx: int = 0, session_tx: int = 0) -> str:
-        """Build complete watch mode display"""
-        display_lines = []
+                          interval: float, session_rx: int, session_tx: int) -> str:
+        """
+        Build legacy string-based display for non-rich environments.
         
-        # Header
-        display_lines.extend(self.build_header(interface, pid))
-        
-        # Status info
-        display_lines.extend(self.build_status_info(current_time, uptime, update_count, current_ssid, last_save_time))
-        
-        # Network details (if connected)
-        if current_ssid and ssid_data:
-            display_lines.extend(self.build_network_details(current_ssid, ssid_data, rx_rate, tx_rate, session_rx, session_tx))
+        Args:
+            interface: Network interface name
+            pid: Current process ID
+            current_time: Current datetime
+            uptime: Application uptime
+            update_count: Number of updates
+            current_ssid: Connected SSID or None
+            last_save_time: Timestamp of last save
+            ssid_data: Usage data for current SSID
+            rx_rate: Current download rate
+            tx_rate: Current upload rate
+            limits_data: Data limits configuration
+            interval: Update interval
+            session_rx: Session download bytes
+            session_tx: Session upload bytes
             
-            # Data limits (if set)
-            limits_section = self.build_limits_section(current_ssid, ssid_data, limits_data)
-            display_lines.extend(limits_section)
+        Returns:
+            str: Formatted string for display
+        """
+        lines = []
+        lines.append(f"Network Interface: {interface}")
+        lines.append(f"WiFi Tracker PID: {pid}")
+        lines.append(f"Time: {current_time.strftime('%H:%M:%S')} | Uptime: {self.format_duration(uptime)}")
+        lines.append("-" * 50)
         
-        # Final status line
-        display_lines.append("")
-        display_lines.append(f"🔄 Refreshing every {interval}s | Press Ctrl+C to exit")
+        status = f"Connected to {current_ssid}" if current_ssid else "Disconnected"
+        lines.append(f"Status: {status}")
         
-        return "\n".join(display_lines)
+        if current_ssid:
+            lines.append(f"Download Rate: {self.format_rate(rx_rate)}")
+            lines.append(f"Upload Rate:   {self.format_rate(tx_rate)}")
+            lines.append("-" * 50)
+            
+            lines.append(f"Session Usage:")
+            lines.append(f"  Down: {self.format_bytes(session_rx)}")
+            lines.append(f"  Up:   {self.format_bytes(session_tx)}")
+            lines.append(f"  Total: {self.format_bytes(session_rx + session_tx)}")
+            
+            if ssid_data:
+                lines.append("-" * 20)
+                lines.append(f"Lifetime Usage for {current_ssid}:")
+                total_rx = ssid_data.get('total_rx', 0)
+                total_tx = ssid_data.get('total_tx', 0)
+                lines.append(f"  Total: {self.format_bytes(total_rx + total_tx)}")
+                
+        lines.append("-" * 50)
+        lines.append(f"Updates: {update_count}")
+        lines.append("Press Ctrl+C to exit")
+        
+        return "\n".join(lines)
     
-    def print_detailed_stats(self, usage_data: Dict[str, Any], limits_data: Dict[str, Any],
-                           current_ssid: str = None, current_measurement: Dict[str, Any] = None) -> None:
-        """Print detailed statistics"""
-        print("📊 Enhanced WiFi Usage Statistics")
-        print("=" * 50)
+    def create_layout(self, interface: str, pid: int, current_time: datetime,
+                     uptime: timedelta, update_count: int, current_ssid: str,
+                     ssid_data: Dict[str, Any], rx_rate: float, tx_rate: float, 
+                     limits_data: Dict[str, Any], session_rx: int, session_tx: int) -> Layout:
+        """Create the Rich layout for watch mode"""
         
-        if not usage_data:
-            print("No usage data available.")
-            return
+        layout = Layout()
         
-        # Sort SSIDs by total usage
-        sorted_ssids = sorted(usage_data.items(), key=lambda x: x[1].get('total_rx', 0) + x[1].get('total_tx', 0), reverse=True)
+        # Header Info
+        time_str = current_time.strftime("%H:%M:%S")
+        uptime_str = self.format_duration(uptime)
+        status_color = "green" if current_ssid else "red"
+        status_text = f"[{status_color}]{current_ssid or 'Disconnected'}[/{status_color}]"
         
-        for ssid, data in sorted_ssids:
-            total_rx = data.get('total_rx', 0)
-            total_tx = data.get('total_tx', 0)
-            total = total_rx + total_tx
+        # Create Header Panel
+        header_table = Table.grid(expand=True)
+        header_table.add_column(justify="left", ratio=1)
+        header_table.add_column(justify="center", ratio=1)
+        header_table.add_column(justify="right", ratio=1)
+        
+        header_table.add_row(
+            f"Interface: [bold cyan]{interface}[/]",
+            f"WiFi: {status_text}",
+            f"PID: [dim]{pid}[/]"
+        )
+        header_table.add_row(
+            f"Time: {time_str}",
+            f"Uptime: {uptime_str}",
+            f"Updates: {update_count}"
+        )
+        
+        layout.split_column(
+            Layout(Panel(header_table, title="WiFi Tracker", border_style="blue", box=ROUNDED), name="header", size=6),
+            Layout(name="body")
+        )
+        
+        if current_ssid and ssid_data:
+            # Stats Table
+            stats_table = Table(expand=True, box=ROUNDED, show_header=True, header_style="bold magenta")
+            stats_table.add_column("Metric", style="cyan")
+            stats_table.add_column("Total", justify="right")
+            stats_table.add_column("Download (RX)", justify="right", style="green")
+            stats_table.add_column("Upload (TX)", justify="right", style="blue")
             
-            # Current connection indicator
-            current_indicator = " 🟢 CURRENT" if ssid == current_ssid else ""
-            print(f"\n🌐 SSID: {ssid}{current_indicator}")
-            print(f"📊 Total Usage: {self.format_bytes(total)} (↓{self.format_bytes(total_rx)} ↑{self.format_bytes(total_tx)})")
+            # Session Stats
+            session_total = session_rx + session_tx
+            stats_table.add_row(
+                "Session Usage", 
+                self.format_bytes(session_total),
+                f"↓ {self.format_bytes(session_rx)}",
+                f"↑ {self.format_bytes(session_tx)}"
+            )
             
-            # Today's usage
+            # Today's Stats
             today = datetime.now().strftime('%Y-%m-%d')
-            daily_data = data.get('daily', {}).get(today, {})
+            daily_data = ssid_data.get('daily', {}).get(today, {})
             daily_rx = daily_data.get('rx', 0)
             daily_tx = daily_data.get('tx', 0)
             daily_total = daily_rx + daily_tx
-            print(f"📅 Today's Usage: {self.format_bytes(daily_total)} (↓{self.format_bytes(daily_rx)} ↑{self.format_bytes(daily_tx)})")
             
-            # Live rates if current connection
-            if ssid == current_ssid and current_measurement:
-                rx_rate = current_measurement.get('rx_rate', 0)
-                tx_rate = current_measurement.get('tx_rate', 0)
-                print(f"⚡ Live Rates: ↓{self.format_rate(rx_rate)} ↑{self.format_rate(tx_rate)}")
+            stats_table.add_row(
+                "Today's Usage", 
+                self.format_bytes(daily_total),
+                f"↓ {self.format_bytes(daily_rx)}",
+                f"↑ {self.format_bytes(daily_tx)}"
+            )
             
-            # Connection info
-            connection_count = data.get('connection_count', 0)
-            first_seen = data.get('first_seen', 'Unknown')
-            last_seen = data.get('last_seen', 'Unknown')
+            # Total Stats
+            total_rx = ssid_data.get('total_rx', 0)
+            total_tx = ssid_data.get('total_tx', 0)
+            total_usage = total_rx + total_tx
             
-            print(f"🔗 Connections: {connection_count}")
-            print(f"📅 First seen: {first_seen}")
-            print(f"📅 Last seen: {last_seen}")
+            stats_table.add_row(
+                "Lifetime Usage", 
+                self.format_bytes(total_usage),
+                f"↓ {self.format_bytes(total_rx)}",
+                f"↑ {self.format_bytes(total_tx)}"
+            )
             
-            # Peak rates (with safe defaults and type checking)
-            peak_rx = 0
-            peak_tx = 0
-            if isinstance(data, dict):
-                peak_rx = data.get('peak_rx_rate', 0) or 0
-                peak_tx = data.get('peak_tx_rate', 0) or 0
-                
-                # Ensure values are numeric
-                try:
-                    peak_rx = float(peak_rx) if peak_rx is not None else 0
-                    peak_tx = float(peak_tx) if peak_tx is not None else 0
-                except (TypeError, ValueError):
-                    peak_rx = 0
-                    peak_tx = 0
+            # Rates Panel content
+            rates_table = Table.grid(expand=True)
+            rates_table.add_column(justify="center", ratio=1)
+            rates_table.add_column(justify="center", ratio=1)
             
-            # Only show if we have valid peak rates
-            if peak_rx > 0 or peak_tx > 0:
-                print(f"🚀 Peak rates: ↓{self.format_rate(peak_rx)} ↑{self.format_rate(peak_tx)}")
+            rates_table.add_row(
+                f"[bold green]↓ {self.format_rate(rx_rate)}[/]",
+                f"[bold blue]↑ {self.format_rate(tx_rate)}[/]"
+            )
             
-            # Data limits
-            if ssid in limits_data:
-                limit_info = limits_data[ssid]
+            # Limits (if any)
+            limits_panel = None
+            if current_ssid in limits_data:
+                limit_info = limits_data[current_ssid]
                 limit_bytes = limit_info.get('limit', 0)
                 interval = limit_info.get('interval', 'monthly')
                 
                 if limit_bytes > 0:
-                    period_usage = self._calculate_period_usage(data, interval)
+                    period_usage = self._calculate_period_usage(ssid_data, interval)
                     usage_percent = min(100, (period_usage / limit_bytes) * 100)
+                    remaining = max(0, limit_bytes - period_usage)
                     
-                    print(f"📊 {interval.capitalize()} Limit: {self.format_bytes(period_usage)}/{self.format_bytes(limit_bytes)} ({usage_percent:.1f}%)")
+                    color = "green"
+                    if usage_percent > 80: color = "yellow"
+                    if usage_percent > 95: color = "red"
                     
-                    progress_bar = self.create_progress_bar(usage_percent)
-                    print(f"    {progress_bar}")
+                    # Create a custom progress bar using text since Rich Progress needs context manager or complex handling
+                    width = 40
+                    filled = int(width * (usage_percent / 100))
+                    bar = f"[{color}]{'━' * filled}[/][dim white]{'━' * (width - filled)}[/]"
                     
-                    if usage_percent > 80:
-                        print(f"    ⚠️ WARNING: {100 - usage_percent:.1f}% remaining")
+                    limits_table = Table.grid(expand=True)
+                    limits_table.add_column()
+                    limits_table.add_row(f"[bold]{interval.capitalize()} Limit[/]: {self.format_bytes(period_usage)} / {self.format_bytes(limit_bytes)} ({usage_percent:.1f}%)")
+                    limits_table.add_row(bar)
+                    limits_table.add_row(f"Remaining: {self.format_bytes(remaining)}")
+                    
+                    limits_panel = Panel(limits_table, title="Data Limit", border_style=color, box=ROUNDED)
+
+            # Assemble Body
+            body_layout = Layout()
             
-            print("-" * 40)
-    
-    def print_all_stats(self, usage_data: Dict[str, Any], limits_data: Dict[str, Any],
-                      current_ssid: str = None, current_measurement: Dict[str, Any] = None) -> None:
-        """Print detailed statistics for all SSIDs from the last 90 days"""
-        print("📊 WiFi Usage Statistics - Last 90 Days")
-        print("=" * 50)
-        print("🌐 Detailed statistics for all tracked networks\n")
-        
-        if not usage_data:
-            print("No usage data available.")
+            if limits_panel:
+                body_layout.split_column(
+                    Layout(Panel(rates_table, title="Live Speed", border_style="magenta", box=ROUNDED), size=5),
+                    Layout(Panel(stats_table, title=f"Statistics ({current_ssid})", box=ROUNDED)),
+                    Layout(limits_panel, size=5)
+                )
+            else:
+                body_layout.split_column(
+                    Layout(Panel(rates_table, title="Live Speed", border_style="magenta", box=ROUNDED), size=5),
+                    Layout(Panel(stats_table, title=f"Statistics ({current_ssid})", box=ROUNDED))
+                )
+                
+            layout["body"].update(body_layout)
+            
+        else:
+            # Not connected
+            layout["body"].update(Panel(
+                Align.center("[bold red]Not connected to WiFi[/]"),
+                box=ROUNDED,
+                title="Status"
+            ))
+            
+        return layout
+
+    def print_top_network_apps(self, apps: list) -> None:
+        """Print top network apps in a formatted table"""
+        if not RICH_AVAILABLE:
+            print("Rich library not installed. Install with: pip install rich")
             return
+
+        table = Table(title="🌐 Top Network Applications", box=ROUNDED, expand=True)
         
-        # Calculate date 90 days ago
-        ninety_days_ago = datetime.now() - timedelta(days=90)
+        table.add_column("PID", justify="right", style="dim")
+        table.add_column("User", style="cyan")
+        table.add_column("App Name", style="bold white")
+        table.add_column("Sent", justify="right", style="blue")
+        table.add_column("Received", justify="right", style="green")
+        table.add_column("Total", justify="right", style="magenta")
+        table.add_column("Conns", justify="right")
+
+        for app in apps:
+            pid = str(app.get('pid', 'N/A'))
+            user = app.get('user', 'unknown')
+            name = app.get('name', 'unknown')
+            sent = self.format_bytes(app.get('bytes_sent', 0))
+            recv = self.format_bytes(app.get('bytes_recv', 0))
+            total = self.format_bytes(app.get('total_bytes', 0))
+            conns = str(app.get('connections', 0))
+            
+            table.add_row(pid, user, name, sent, recv, total, conns)
+
+        self.console.print(table)
+
+    def print_detailed_stats(self, usage_data: Dict[str, Any], limits_data: Dict[str, Any],
+                           current_ssid: str = None, current_measurement: Dict[str, Any] = None) -> None:
+        """Print detailed statistics using Rich"""
+        if not RICH_AVAILABLE:
+            print("Rich library required.")
+            return
+
+        table = Table(title="📊 Enhanced WiFi Usage Statistics", box=ROUNDED, expand=True)
         
-        # Sort SSIDs by total usage
-        sorted_ssids = sorted(usage_data.items(), 
-                             key=lambda x: x[1].get('total_rx', 0) + x[1].get('total_tx', 0), 
-                             reverse=True)
-        
+        table.add_column("SSID", style="bold cyan")
+        table.add_column("Total Usage", justify="right")
+        table.add_column("Today", justify="right")
+        table.add_column("Connections", justify="right")
+        table.add_column("Last Seen", style="dim")
+        table.add_column("Limit", justify="center")
+
+        sorted_ssids = sorted(usage_data.items(), key=lambda x: x[1].get('total_rx', 0) + x[1].get('total_tx', 0), reverse=True)
+
         for ssid, data in sorted_ssids:
-            # Current connection indicator
-            current_indicator = " 🟢 CURRENT" if ssid == current_ssid else ""
-            print(f"\n🌐 SSID: {ssid}{current_indicator}")
-            print("-" * (len(ssid) + 8 + (9 if current_indicator else 0)))
+            # Total
+            total = data.get('total_rx', 0) + data.get('total_tx', 0)
             
-            # Total usage
-            total_rx = data.get('total_rx', 0)
-            total_tx = data.get('total_tx', 0)
-            total = total_rx + total_tx
-            print(f"📊 Total Usage: {self.format_bytes(total)} (↓{self.format_bytes(total_rx)} ↑{self.format_bytes(total_tx)})")
+            # Today
+            today = datetime.now().strftime('%Y-%m-%d')
+            daily_data = data.get('daily', {}).get(today, {})
+            daily_total = daily_data.get('rx', 0) + daily_data.get('tx', 0)
             
-            # Live rates if current connection
-            if ssid == current_ssid and current_measurement:
-                rx_rate = current_measurement.get('rx_rate', 0)
-                tx_rate = current_measurement.get('tx_rate', 0)
-                print(f"⚡ Live Rates: ↓{self.format_rate(rx_rate)} ↑{self.format_rate(tx_rate)}")
-            
-            # Connection info
-            connection_count = data.get('connection_count', 0)
-            first_seen = data.get('first_seen', 'Unknown')
+            # Info
+            conns = str(data.get('connection_count', 0))
             last_seen = data.get('last_seen', 'Unknown')
             
-            print(f"\n🔗 Connection Info:")
-            print(f"   • Connections: {connection_count}")
-            print(f"   • First seen: {first_seen}")
-            print(f"   • Last seen: {last_seen}")
-            
-            # Daily usage for last 90 days
-            daily_data = data.get('daily', {})
-            if daily_data:
-                print("\n📅 Daily Usage (Last 90 days):")
-                
-                # Sort dates in descending order (newest first)
-                sorted_dates = sorted(daily_data.items(), key=lambda x: x[0], reverse=True)
-                
-                # Filter for last 90 days
-                recent_days = []
-                for date_str, day_data in sorted_dates:
-                    try:
-                        date = datetime.strptime(date_str, '%Y-%m-%d')
-                        if date >= ninety_days_ago:
-                            recent_days.append((date_str, day_data))
-                    except (ValueError, TypeError):
-                        continue
-                
-                if not recent_days:
-                    print("   No recent daily data available.")
-                else:
-                    for date_str, day_data in recent_days:
-                        rx = day_data.get('rx', 0)
-                        tx = day_data.get('tx', 0)
-                        total = rx + tx
-                        
-                        if total > 0:  # Only show days with usage
-                            print(f"   • {date_str}: {self.format_bytes(total)} "
-                                f"(↓{self.format_bytes(rx)} ↑{self.format_bytes(tx)})")
-                            
-                            # Show peak rates if available (with safe access and type checking)
-                            peak_rx = 0
-                            peak_tx = 0
-                            if isinstance(day_data, dict):
-                                peak_rx = day_data.get('peak_rx_rate', 0) or 0
-                                peak_tx = day_data.get('peak_tx_rate', 0) or 0
-                                
-                                # Ensure values are numeric
-                                try:
-                                    peak_rx = float(peak_rx) if peak_rx is not None else 0
-                                    peak_tx = float(peak_tx) if peak_tx is not None else 0
-                                except (TypeError, ValueError):
-                                    peak_rx = 0
-                                    peak_tx = 0
-                            
-                            # Only show if we have valid peak rates
-                            if peak_rx > 0 or peak_tx > 0:
-                                print(f"     ⚡ Peak rates: ↓{self.format_rate(peak_rx)} ↑{self.format_rate(peak_tx)}")
-            
-            # Data limits
+            # Limit
+            limit_str = "-"
             if ssid in limits_data:
                 limit_info = limits_data[ssid]
-                limit_bytes = limit_info.get('limit', 0)
+                limit = limit_info.get('limit', 0)
                 interval = limit_info.get('interval', 'monthly')
-                
-                if limit_bytes > 0:
+                if limit > 0:
                     period_usage = self._calculate_period_usage(data, interval)
-                    usage_percent = min(100, (period_usage / limit_bytes) * 100)
-                    
-                    print(f"\n📊 {interval.capitalize()} Data Limit:")
-                    print(f"   • Usage: {self.format_bytes(period_usage)} / {self.format_bytes(limit_bytes)} ({usage_percent:.1f}%)")
-                    print(f"   • Remaining: {self.format_bytes(max(0, limit_bytes - period_usage))}")
-                    
-                    progress_bar = self.create_progress_bar(usage_percent, 30)
-                    print(f"   • {progress_bar}")
-                    
-                    if usage_percent > 80:
-                        print(f"   ⚠️  WARNING: {100 - usage_percent:.1f}% remaining")
-            
-            print("\n" + "=" * 50)
+                    percent = (period_usage / limit) * 100
+                    color = "green" if percent < 80 else "red"
+                    limit_str = f"[{color}]{percent:.0f}% of {interval[0].upper()}[/]"
+
+            ssid_display = ssid
+            if ssid == current_ssid:
+                ssid_display = f"🟢 {ssid}"
+
+            table.add_row(
+                ssid_display,
+                self.format_bytes(total),
+                self.format_bytes(daily_total),
+                conns,
+                last_seen,
+                limit_str
+            )
+
+        self.console.print(table)
+
+    def print_all_stats(self, usage_data: Dict[str, Any], limits_data: Dict[str, Any],
+                       current_ssid: str = None, current_measurement: Dict[str, Any] = None) -> None:
+        """Print detailed stats (using same format as detailed for now, but potentially expanded)"""
+        # For now, reuse the detailed stats table as it's cleaner
+        self.print_detailed_stats(usage_data, limits_data, current_ssid, current_measurement)

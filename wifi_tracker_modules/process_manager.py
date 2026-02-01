@@ -10,23 +10,46 @@ import signal
 import psutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Dict, Optional, Any
+
+from wifi_tracker_modules.config import Config
 
 
 class ProcessManager:
-    """Manages WiFi tracker processes and daemon operations"""
+    """
+    Manages WiFi tracker processes and daemon operations.
+
+    Attributes:
+        script_name (str): Name of the script to manage.
+        pid_file (Path): Path to the daemon PID file.
+        log_file (Path): Path to the daemon log file.
+        error_log (Path): Path to the daemon error log file.
+    """
     
     def __init__(self, script_name: str = "wifi-tracker"):
+        """
+        Initialize the ProcessManager.
+
+        Args:
+            script_name (str, optional): Name of the script. Defaults to "wifi-tracker".
+        """
         self.script_name = script_name
-        self.pid_file = Path.home() / ".cache" / f"{script_name}.pid"
-        self.log_file = Path.home() / ".cache" / f"{script_name}_daemon.log"
-        self.error_log = Path.home() / ".cache" / f"{script_name}_error.log"
+        # Use centralized config for paths
+        self.pid_file = Config.get_pid_file() 
+        self.log_file = Config.get_log_file()
+        self.error_log = Config.get_error_log_file()
         
-        # Ensure cache directory exists
-        self.pid_file.parent.mkdir(exist_ok=True)
+        # Ensure directories exist
+        self.pid_file.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
     
     def find_all_instances(self) -> List[psutil.Process]:
-        """Find ALL instances of wifi-tracker regardless of command line options"""
+        """
+        Find ALL instances of wifi-tracker regardless of command line options.
+
+        Returns:
+            List[psutil.Process]: List of process objects.
+        """
         instances = []
         
         try:
@@ -61,7 +84,15 @@ class ProcessManager:
         return instances
     
     def kill_all_instances(self, exclude_current: bool = True) -> int:
-        """Kill ALL instances of wifi-tracker with any options"""
+        """
+        Kill ALL instances of wifi-tracker with any options.
+
+        Args:
+            exclude_current (bool, optional): Whether to exclude current process. Defaults to True.
+
+        Returns:
+            int: Number of killed instances.
+        """
         killed_count = 0
         current_pid = os.getpid()
         
@@ -113,7 +144,12 @@ class ProcessManager:
         return killed_count
     
     def is_daemon_running(self) -> bool:
-        """Check if daemon is currently running"""
+        """
+        Check if daemon is currently running.
+
+        Returns:
+            bool: True if daemon is running.
+        """
         if not self.pid_file.exists():
             return False
         
@@ -139,7 +175,7 @@ class ProcessManager:
             return False
     
     def create_pid_file(self) -> None:
-        """Create PID file for daemon process"""
+        """Create PID file for daemon process."""
         try:
             with open(self.pid_file, 'w') as f:
                 f.write(str(os.getpid()))
@@ -147,15 +183,119 @@ class ProcessManager:
             self._log_error(f"Failed to create PID file: {e}")
     
     def remove_pid_file(self) -> None:
-        """Remove PID file"""
-        try:
-            if self.pid_file.exists():
+        """Remove the PID file."""
+        if self.pid_file.exists():
+            try:
                 self.pid_file.unlink()
+            except OSError as e:
+                self._log_error(f"Failed to remove PID file: {e}")
+
+    # ==========================
+    # Systemd Integration
+    # ==========================
+
+    def get_systemd_service_path(self) -> Path:
+        """
+        Get the path for the user systemd service file.
+
+        Returns:
+            Path: Path to service file.
+        """
+        return Path.home() / ".config" / "systemd" / "user" / "wifi-tracker.service"
+
+    def is_systemd_installed(self) -> bool:
+        """
+        Check if the systemd service is installed.
+
+        Returns:
+            bool: True if installed.
+        """
+        return self.get_systemd_service_path().exists()
+
+    def install_systemd_service(self, executable_path: str, args: str = "--daemon") -> bool:
+        """
+        Generate and install systemd user service.
+        
+        Args:
+            executable_path: Full path to the wifi-tracker executable
+            args: Arguments to pass to the executable
+            
+        Returns:
+            bool: True if successful
+        """
+        service_path = self.get_systemd_service_path()
+        service_dir = service_path.parent
+        
+        # Ensure directory exists
+        service_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Service file content
+        content = f"""[Unit]
+Description=WiFi Usage Tracker Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={executable_path} {args}
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+"""
+        
+        try:
+            # Write service file
+            with open(service_path, 'w') as f:
+                f.write(content)
+            
+            # Reload systemd
+            subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
+            
+            # Enable and start
+            subprocess.run(['systemctl', '--user', 'enable', 'wifi-tracker'], check=True)
+            subprocess.run(['systemctl', '--user', 'start', 'wifi-tracker'], check=True)
+            
+            print(f"✅ Systemd service installed at: {service_path}")
+            print("To view logs: journalctl --user -u wifi-tracker -f")
+            return True
+            
         except Exception as e:
-            self._log_error(f"Failed to remove PID file: {e}")
+            print(f"❌ Failed to install systemd service: {e}")
+            return False
+
+    def remove_systemd_service(self) -> bool:
+        """
+        Stop and remove the systemd service.
+
+        Returns:
+            bool: True if successful.
+        """
+        service_path = self.get_systemd_service_path()
+        
+        try:
+            # Stop and disable
+            subprocess.run(['systemctl', '--user', 'stop', 'wifi-tracker'], stderr=subprocess.DEVNULL)
+            subprocess.run(['systemctl', '--user', 'disable', 'wifi-tracker'], stderr=subprocess.DEVNULL)
+            
+            # Remove file
+            if service_path.exists():
+                service_path.unlink()
+                
+            # Reload
+            subprocess.run(['systemctl', '--user', 'daemon-reload'], stderr=subprocess.DEVNULL)
+            
+            print("✅ Systemd service removed")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to remove systemd service: {e}")
+            return False
     
     def daemonize(self) -> None:
-        """Daemonize the current process"""
+        """Daemonize the current process."""
         try:
             # First fork
             pid = os.fork()
@@ -192,7 +332,12 @@ class ProcessManager:
             os.dup2(dev_null_w.fileno(), sys.stderr.fileno())
     
     def setup_signal_handlers(self, cleanup_callback=None) -> None:
-        """Setup signal handlers for graceful shutdown"""
+        """
+        Setup signal handlers for graceful shutdown.
+
+        Args:
+            cleanup_callback (callable, optional): function to call on exit.
+        """
         def signal_handler(signum, frame):
             self._log_info(f"Received signal {signum}, shutting down gracefully...")
             if cleanup_callback:
@@ -205,7 +350,7 @@ class ProcessManager:
         signal.signal(signal.SIGUSR1, signal_handler)
     
     def _log_info(self, message: str) -> None:
-        """Log info message"""
+        """Log info message to log file."""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] INFO: {message}\n"
         
@@ -216,7 +361,7 @@ class ProcessManager:
             pass  # Fail silently in daemon mode
     
     def _log_error(self, message: str) -> None:
-        """Log error message"""
+        """Log error message to error log."""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] ERROR: {message}\n"
         
@@ -226,8 +371,13 @@ class ProcessManager:
         except Exception:
             pass  # Fail silently in daemon mode
     
-    def get_process_info(self) -> dict:
-        """Get information about current process and instances"""
+    def get_process_info(self) -> Dict[str, Any]:
+        """
+        Get information about current process and instances.
+
+        Returns:
+            Dict[str, Any]: Process info dictionary.
+        """
         instances = self.find_all_instances()
         daemon_running = self.is_daemon_running()
         
@@ -241,8 +391,9 @@ class ProcessManager:
             'error_log': str(self.error_log)
         }
         
-    def get_top_network_apps(self, limit: int = 10) -> list:
-        """Get top applications using the network
+    def get_top_network_apps(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get top applications using the network.
         
         Args:
             limit: Maximum number of apps to return (default: 10)
@@ -281,13 +432,8 @@ class ProcessManager:
                             'last_activity': 0
                         }
                     
-                    # Update connection count and last activity
+                    # Update connection count
                     processes[conn.pid]['connections'] += 1
-                    if hasattr(conn, 'last_activity') and conn.last_activity:
-                        processes[conn.pid]['last_activity'] = max(
-                            processes[conn.pid].get('last_activity', 0),
-                            conn.last_activity or 0
-                        )
                             
                 except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, psutil.ZombieProcess):
                     continue

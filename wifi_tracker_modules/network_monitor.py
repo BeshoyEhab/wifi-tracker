@@ -97,7 +97,12 @@ class NetworkMonitor:
         return None
 
     def get_signal_quality(self) -> Dict[str, Any]:
-        """Get WiFi signal quality information"""
+        """
+        Get WiFi signal quality information.
+
+        Returns:
+            Dict[str, Any]: Dictionary containing signal level, quality, link quality, and noise level.
+        """
         quality_info = {
             'signal_level': 0,
             'signal_quality': 0,
@@ -131,7 +136,15 @@ class NetworkMonitor:
         return quality_info
     
     def calculate_rates(self, current_stats: Dict[str, int]) -> Tuple[float, float]:
-        """Calculate download and upload rates"""
+        """
+        Calculate download and upload rates based on previous measurement.
+
+        Args:
+            current_stats (Dict[str, int]): Current interface statistics (rx_bytes, tx_bytes).
+
+        Returns:
+            Tuple[float, float]: (rx_rate, tx_rate) in bytes per second.
+        """
         if not self.last_measurement:
             self.last_measurement = {
                 'stats': current_stats,
@@ -157,7 +170,12 @@ class NetworkMonitor:
         return rx_rate, tx_rate
     
     def get_measurement(self) -> Optional[Dict[str, Any]]:
-        """Get complete network measurement"""
+        """
+        Get complete network measurement including stats, SSID, and rates.
+
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary with measurement data or None if failed.
+        """
         current_ssid = self.get_current_ssid()
         current_stats = self.get_interface_stats()
         
