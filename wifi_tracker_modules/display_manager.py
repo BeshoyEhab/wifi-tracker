@@ -27,8 +27,6 @@ class DisplayManager:
 
     def __init__(self):
         self.console = Console() if RICH_AVAILABLE else None
-        self.last_display_time = 0
-        self.display_cache = {}
 
     def clear_screen(self) -> None:
         """Clear the terminal screen"""

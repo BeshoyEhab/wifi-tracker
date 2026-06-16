@@ -63,7 +63,7 @@ class NotificationManager:
                 choice = result.stdout.strip()
                 if choice:
                     return choice
-                # Empty = notification expired or dismissed, resend
+                time.sleep(2)
             except Exception:
                 return ""
         return ""

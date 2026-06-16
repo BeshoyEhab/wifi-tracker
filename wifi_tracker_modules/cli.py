@@ -209,54 +209,29 @@ class WiFiTracker:
         """Main monitoring loop for daemon mode"""
         save_interval = 0.5
         last_save_time = time.time()
-        app_check_interval = 60  # Check apps every 60 seconds
         last_app_check_time = 0
-        notified_high_usage = set()  # Track which apps we already notified about
-        known_apps = set()  # Track apps we've seen this session
-        last_daily_summary_hour = -1  # Track last daily summary hour
+        notified_high_usage = set()
+        known_apps = set()
+        last_daily_summary_hour = -1
 
         while self.running:
             try:
-                # Get network measurement
                 measurement = self.monitor.get_measurement()
                 current_ssid = measurement.get("ssid") if measurement else None
 
-                # Notify on connection change
-                self._check_connection_change(current_ssid)
+                self._monitoring_tick(measurement, current_ssid, notified_high_usage)
 
                 if measurement and current_ssid:
-                    # Check gateway for MITM/rogue detection
-                    self._check_gateway(current_ssid, measurement)
-
-                    # Update usage data with gateway IP
-                    self.data_manager.update_usage(
-                        current_ssid,
-                        measurement["rx_bytes"],
-                        measurement["tx_bytes"],
-                        measurement["timestamp"],
-                        measurement["rx_rate"],
-                        measurement["tx_rate"],
-                        measurement.get("gateway_ip"),
+                    last_app_check_time = self._check_high_usage_periodically(
+                        current_ssid, notified_high_usage, last_app_check_time
                     )
+                    self._check_new_apps(current_ssid, known_apps)
 
-                    # Check limits
-                    current_usage = self._get_current_period_usage(current_ssid)
-                    self._check_limits(current_ssid, current_usage)
-
-                    # Periodically check top apps and track usage
-                    current_time = time.time()
-                    if current_time - last_app_check_time >= app_check_interval:
-                        self._check_high_usage_apps(current_ssid, notified_high_usage)
-                        self._check_new_apps(current_ssid, known_apps)
-                        last_app_check_time = current_time
-
-                    # Daily summary at midnight (once per hour to avoid spam)
                     now_hour = datetime.now().hour
                     if now_hour == 0 and last_daily_summary_hour != 0:
                         self._send_daily_summary(current_ssid)
                     last_daily_summary_hour = now_hour
 
-                # Save data periodically
                 current_time = time.time()
                 if current_time - last_save_time >= save_interval:
                     self.data_manager.save_data()
@@ -271,6 +246,35 @@ class WiFiTracker:
                 time.sleep(1)
 
         self._cleanup()
+
+    def _monitoring_tick(self, measurement: dict, current_ssid: str, notified_high_usage: set) -> None:
+        """Single iteration of the monitoring loop (shared by daemon and watch mode)."""
+        self._check_connection_change(current_ssid)
+
+        if measurement and current_ssid:
+            self._check_gateway(current_ssid, measurement)
+
+            self.data_manager.update_usage(
+                current_ssid,
+                measurement["rx_bytes"],
+                measurement["tx_bytes"],
+                measurement["timestamp"],
+                measurement["rx_rate"],
+                measurement["tx_rate"],
+                measurement.get("gateway_ip"),
+            )
+
+            current_usage = self._get_current_period_usage(current_ssid)
+            self._check_limits(current_ssid, current_usage)
+
+    def _check_high_usage_periodically(self, current_ssid: str, notified_high_usage: set,
+                                        last_check_time: float, interval: float = 60) -> float:
+        """Check high-usage apps if enough time has passed. Returns updated last_check_time."""
+        now = time.time()
+        if now - last_check_time >= interval:
+            self._check_high_usage_apps(current_ssid, notified_high_usage)
+            return now
+        return last_check_time
 
     def _check_gateway(self, ssid: str, measurement: dict) -> None:
         """Verify gateway is legitimate. Prompt user if unknown."""
@@ -290,12 +294,11 @@ class WiFiTracker:
 
         if choice == "trust":
             self.data_manager.add_known_gateway(ssid, gateway_ip, gateway_mac, vendor)
-            self.process_manager._log_error(f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}")
+            self._log_info(f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}")
         elif choice == "block":
-            self.process_manager._log_error(f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}")
+            self._log_info(f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}")
         else:
-            # Fallback notification sent, log for awareness
-            self.process_manager._log_error(f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent")
+            self._log_info(f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent")
 
     def _check_high_usage_apps(self, ssid: str, notified: set) -> None:
         """Check for apps exceeding the configured data usage threshold."""
@@ -336,7 +339,7 @@ class WiFiTracker:
                     self.data_manager.consume_kill_onetime(ssid, app_name)
                     killed = self.data_manager.kill_app(app_name)
                     if killed:
-                        self.process_manager._log_error(
+                        self._log_info(
                             f"Auto-killed {app_name} ({killed} processes) for exceeding limit on {ssid}"
                         )
                     continue
@@ -354,22 +357,22 @@ class WiFiTracker:
 
                 choice = notifier.ask_high_usage_action(ssid, app_name, size, window_msg)
 
-                if choice == "safe_once":
-                    self.data_manager.mark_app_safe(ssid, app_name, always=False)
-                    self.process_manager._log_error(f"User marked {app_name} as safe (once) on {ssid}")
-                elif choice == "safe_always":
-                    self.data_manager.mark_app_safe(ssid, app_name, always=True)
-                    self.process_manager._log_error(f"User marked {app_name} as safe (always) on {ssid}")
-                elif choice == "kill_once":
-                    killed = self.data_manager.kill_app(app_name)
-                    self.data_manager.mark_app_kill(ssid, app_name, always=False)
-                    self.process_manager._log_error(f"User killed {app_name} ({killed} procs) on {ssid}")
-                elif choice == "kill_always":
-                    killed = self.data_manager.kill_app(app_name)
-                    self.data_manager.mark_app_kill(ssid, app_name, always=True)
-                    self.process_manager._log_error(f"User killed {app_name} ({killed} procs, always) on {ssid}")
-                else:
-                    self.process_manager._log_error(f"High usage alert for {app_name} ({size}) on {ssid} - ignored")
+            if choice == "safe_once":
+                self.data_manager.mark_app_safe(ssid, app_name, always=False)
+                self._log_info(f"User marked {app_name} as safe (once) on {ssid}")
+            elif choice == "safe_always":
+                self.data_manager.mark_app_safe(ssid, app_name, always=True)
+                self._log_info(f"User marked {app_name} as safe (always) on {ssid}")
+            elif choice == "kill_once":
+                killed = self.data_manager.kill_app(app_name)
+                self.data_manager.mark_app_kill(ssid, app_name, always=False)
+                self._log_info(f"User killed {app_name} ({killed} procs) on {ssid}")
+            elif choice == "kill_always":
+                killed = self.data_manager.kill_app(app_name)
+                self.data_manager.mark_app_kill(ssid, app_name, always=True)
+                self._log_info(f"User killed {app_name} ({killed} procs, always) on {ssid}")
+            else:
+                self._log_info(f"High usage alert for {app_name} ({size}) on {ssid} - ignored")
 
                 notified.add(app_name)
 
@@ -434,7 +437,7 @@ class WiFiTracker:
         if RICH_AVAILABLE:
             from rich.live import Live
 
-        print("🔄 Starting watch mode...")
+        print("Starting watch mode...")
         print("Press Ctrl+C to exit")
         time.sleep(1)
 
@@ -442,58 +445,29 @@ class WiFiTracker:
         last_save_time = time.time()
         save_interval = 0.5
         update_count = 0
-        app_check_interval = 60
         last_app_check_time = 0
         notified_high_usage = set()
+        current_pid = self.process_manager.get_process_info()["current_pid"]
 
-        # Context manager for Rich Live or dummy for basic print
         context = Live(auto_refresh=False) if RICH_AVAILABLE else open(os.devnull, "w")
 
-        # If not using Rich, we just print periodically
-        # If using Rich, we update the Live display
-
         try:
-            # We enter the context (Live or dummy)
-            # If dummy (file), __enter__ returns the file object, which we ignore
             with context as live:
                 while self.running:
                     current_time = datetime.now()
                     uptime = current_time - self.start_time
                     update_count += 1
 
-                    # Get current measurement
                     measurement = self.monitor.get_measurement()
                     current_ssid = measurement.get("ssid") if measurement else None
 
-                    self._check_connection_change(current_ssid)
+                    self._monitoring_tick(measurement, current_ssid, notified_high_usage)
 
-                    # Check gateway for MITM/rogue detection
                     if measurement and current_ssid:
-                        self._check_gateway(current_ssid, measurement)
-
-                    # Update data if connected
-                    if measurement and current_ssid:
-                        self.data_manager.update_usage(
-                            current_ssid,
-                            measurement["rx_bytes"],
-                            measurement["tx_bytes"],
-                            measurement["timestamp"],
-                            measurement["rx_rate"],
-                            measurement["tx_rate"],
-                            measurement.get("gateway_ip"),
+                        last_app_check_time = self._check_high_usage_periodically(
+                            current_ssid, notified_high_usage, last_app_check_time
                         )
 
-                        # Check limits
-                        current_usage = self._get_current_period_usage(current_ssid)
-                        self._check_limits(current_ssid, current_usage)
-
-                        # Periodically check top apps
-                        wall_time = time.time()
-                        if wall_time - last_app_check_time >= app_check_interval:
-                            self._check_high_usage_apps(current_ssid, notified_high_usage)
-                            last_app_check_time = wall_time
-
-                    # Get SSID data for display
                     ssid_data = (
                         self.data_manager.usage_data.get(current_ssid, {})
                         if current_ssid
@@ -502,7 +476,6 @@ class WiFiTracker:
                     rx_rate = measurement.get("rx_rate", 0) if measurement else 0
                     tx_rate = measurement.get("tx_rate", 0) if measurement else 0
 
-                    # Get session usage
                     session_rx, session_tx = 0, 0
                     if measurement and current_ssid:
                         session_rx, session_tx = self.data_manager.get_session_usage(
@@ -511,11 +484,10 @@ class WiFiTracker:
                             measurement["tx_bytes"],
                         )
 
-                    # Display
                     if RICH_AVAILABLE:
                         layout = self.display_manager.create_layout(
                             self.interface,
-                            self.process_manager.get_process_info()["current_pid"],
+                            current_pid,
                             current_time,
                             uptime,
                             update_count,
@@ -529,10 +501,9 @@ class WiFiTracker:
                         )
                         live.update(layout, refresh=True)
                     else:
-                        # Legacy display
                         display_content = self.display_manager.build_watch_display(
                             self.interface,
-                            self.process_manager.get_process_info()["current_pid"],
+                            current_pid,
                             current_time,
                             uptime,
                             update_count,
@@ -549,13 +520,11 @@ class WiFiTracker:
                         self.display_manager.clear_screen()
                         print(display_content)
 
-                    # Handle saving
                     current_timestamp = time.time()
                     if current_timestamp - last_save_time >= save_interval:
                         self.data_manager.save_data()
                         last_save_time = current_timestamp
 
-                    # Sleep
                     time.sleep(self.interval)
 
         except KeyboardInterrupt:
@@ -868,6 +837,10 @@ class WiFiTracker:
         self.running = False
         self.data_manager.save_data()
         self.process_manager.remove_pid_file()
+
+    def _log_info(self, message: str) -> None:
+        """Log info message to log file."""
+        self.process_manager._log_info(message)
         notifier.send_notification("WiFi Tracker", "WiFi Tracker stopped", Urgency.LOW)
 
 

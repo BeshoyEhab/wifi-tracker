@@ -342,7 +342,6 @@ WantedBy=default.target
             self._log_info(f"Received signal {signum}, shutting down gracefully...")
             if cleanup_callback:
                 cleanup_callback()
-            self.remove_pid_file()
             sys.exit(0)
         
         signal.signal(signal.SIGTERM, signal_handler)
