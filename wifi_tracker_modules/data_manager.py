@@ -421,6 +421,7 @@ class DataManager:
                         "peak_tx_rate": daily_data.get("peak_tx_rate", 0),
                         "connection_duration": daily_data.get("connection_duration", 0),
                         "data_points": daily_data.get("data_points", 0),
+                        "hourly": daily_data.get("hourly", {}),
                     }
 
             validated_ssid["daily"] = validated_daily

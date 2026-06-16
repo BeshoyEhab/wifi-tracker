@@ -907,7 +907,6 @@ def main():
                     current_ssid, today_usage, total, rate_up, rate_down, limit, top_app
                 )
         elif command in ("graph", "g"):
-            # ASCII usage graph
             target_ssid = getattr(args, 'ssid', None)
             if not target_ssid:
                 measurement = tracker.monitor.get_measurement()
@@ -915,6 +914,7 @@ def main():
             if not target_ssid:
                 print("Not connected to any network. Usage: wifi-tracker graph SSID")
             else:
+                tracker.data_manager.load_data()
                 hourly = tracker.data_manager.get_hourly_usage_for_graph(target_ssid)
                 tracker.display_manager.print_ascii_graph(hourly, target_ssid)
 
