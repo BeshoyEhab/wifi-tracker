@@ -20,14 +20,17 @@ try:
     from .network_monitor import NetworkMonitor
     from .process_manager import ProcessManager
     from .notification_manager import notifier, Urgency
+    from .alert_manager import AlertManager
+    from .app_manager import AppManager
 except ImportError as e:
-    # Fallback for direct execution/testing if not installed as package
     try:
         from wifi_tracker_modules.data_manager import DataManager
         from wifi_tracker_modules.display_manager import DisplayManager, RICH_AVAILABLE
         from wifi_tracker_modules.network_monitor import NetworkMonitor
         from wifi_tracker_modules.process_manager import ProcessManager
         from wifi_tracker_modules.notification_manager import notifier, Urgency
+        from wifi_tracker_modules.alert_manager import AlertManager
+        from wifi_tracker_modules.app_manager import AppManager
     except ImportError:
         print(f"Error importing modules: {e}")
         print(
@@ -58,6 +61,8 @@ class WiFiTracker:
         self.process_manager = ProcessManager("wifi-tracker")
         self.data_manager = DataManager()
         self.display_manager = DisplayManager()
+        self.alert_manager = AlertManager(self.data_manager, self.process_manager)
+        self.app_manager = AppManager(self.data_manager, self.process_manager, self.display_manager)
 
         # Update interface from monitor if auto-detected
         if not self.interface:
@@ -75,12 +80,6 @@ class WiFiTracker:
             time.sleep(1)
 
     def _check_connection_change(self, current_ssid: str) -> None:
-        """
-        Check and notify if connection changed (helper for both modes).
-
-        Args:
-            current_ssid (str): The currently connected SSID.
-        """
         if current_ssid != self.last_ssid:
             if current_ssid:
                 notifier.send_notification(
@@ -93,53 +92,6 @@ class WiFiTracker:
                     Urgency.NORMAL,
                 )
             self.last_ssid = current_ssid
-
-    def _check_limits(self, ssid: str, current_usage: int) -> None:
-        """
-        Check data limits and notify if needed.
-
-        Args:
-            ssid (str): The SSID to check limits for.
-            current_usage (int): Current usage in bytes for the limit period.
-        """
-        if ssid in self.data_manager.limits_data:
-            limit_info = self.data_manager.limits_data[ssid]
-            limit = limit_info.get("limit", 0)
-            if limit > 0:
-                percent = (current_usage / limit) * 100
-
-                # Check 100%
-                if percent >= 100 and not limit_info.get("notified_100", False):
-                    notifier.send_notification(
-                        "Data Limit Reached",
-                        f"You have reached your data limit for {ssid}!",
-                        Urgency.CRITICAL,
-                    )
-                    self.data_manager.update_limit_status(ssid, "notified_100", True)
-
-                # Check 80%
-                elif (
-                    percent >= 80
-                    and percent < 100
-                    and not limit_info.get("notified_80", False)
-                ):
-                    notifier.send_notification(
-                        "Data Limit Warning",
-                        f"You have used {percent:.1f}% of your data limit for {ssid}.",
-                        Urgency.NORMAL,
-                    )
-                    self.data_manager.update_limit_status(ssid, "notified_80", True)
-
-                # Reset if below 80 (e.g. limit increased or new period)
-                elif percent < 80:
-                    if limit_info.get("notified_80", False):
-                        self.data_manager.update_limit_status(
-                            ssid, "notified_80", False
-                        )
-                    if limit_info.get("notified_100", False):
-                        self.data_manager.update_limit_status(
-                            ssid, "notified_100", False
-                        )
 
     def daemon_mode(self) -> None:
         """
@@ -225,11 +177,11 @@ class WiFiTracker:
                     last_app_check_time = self._check_high_usage_periodically(
                         current_ssid, notified_high_usage, last_app_check_time
                     )
-                    self._check_new_apps(current_ssid, known_apps)
+                    self.app_manager.check_new_apps(current_ssid, known_apps)
 
                     now_hour = datetime.now().hour
                     if now_hour == 0 and last_daily_summary_hour != 0:
-                        self._send_daily_summary(current_ssid)
+                        self.alert_manager.send_daily_summary(current_ssid, self.display_manager)
                     last_daily_summary_hour = now_hour
 
                 current_time = time.time()
@@ -264,15 +216,15 @@ class WiFiTracker:
                 measurement.get("gateway_ip"),
             )
 
-            current_usage = self._get_current_period_usage(current_ssid)
-            self._check_limits(current_ssid, current_usage)
+            current_usage = self.alert_manager.get_current_period_usage(current_ssid, self.display_manager)
+            self.alert_manager.check_limits(current_ssid, current_usage)
 
     def _check_high_usage_periodically(self, current_ssid: str, notified_high_usage: set,
                                         last_check_time: float, interval: float = 60) -> float:
         """Check high-usage apps if enough time has passed. Returns updated last_check_time."""
         now = time.time()
         if now - last_check_time >= interval:
-            self._check_high_usage_apps(current_ssid, notified_high_usage)
+            self.app_manager.check_high_usage_apps(current_ssid, notified_high_usage)
             return now
         return last_check_time
 
@@ -298,139 +250,7 @@ class WiFiTracker:
         elif choice == "block":
             self._log_info(f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}")
         else:
-            self._log_info(f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent")
-
-    def _check_high_usage_apps(self, ssid: str, notified: set) -> None:
-        """Check for apps exceeding the configured data usage threshold."""
-        try:
-            settings = self.data_manager.get_alert_settings()
-            threshold = settings["threshold_bytes"]
-            window = settings["window_hours"]
-
-            # Record current I/O for all active apps (skip phantom pid=0 entries)
-            top_apps = self.process_manager.get_top_network_apps(limit=20, ssid=ssid)
-            now = datetime.now()
-            for app in top_apps:
-                if app.get("pid", 0) == 0:
-                    continue
-                self.data_manager.update_app_usage(
-                    ssid,
-                    app.get("name", "unknown"),
-                    app.get("bytes_sent", 0),
-                    app.get("bytes_recv", 0),
-                    now,
-                    pid=app.get("pid", 0),
-                )
-
-            # Check which apps exceed threshold within the time window
-            high_apps = self.data_manager.get_high_usage_apps(ssid, threshold, window)
-
-            for app in high_apps:
-                app_name = app["name"]
-                total_bytes = app["total_bytes"]
-
-                # Skip if already safe (one-time or always)
-                if self.data_manager.is_safe_app(ssid, app_name):
-                    self.data_manager.consume_safe_onetime(ssid, app_name)
-                    continue
-
-                # Auto-kill if marked for killing (one-time or always)
-                if self.data_manager.is_kill_app(ssid, app_name):
-                    self.data_manager.consume_kill_onetime(ssid, app_name)
-                    killed = self.data_manager.kill_app(app_name)
-                    if killed:
-                        self._log_info(
-                            f"Auto-killed {app_name} ({killed} processes) for exceeding limit on {ssid}"
-                        )
-                    continue
-
-                # Skip if already notified this session
-                if app_name in notified:
-                    continue
-
-                # New high-usage app - ask user what to do
-                size = self.display_manager.format_bytes(total_bytes)
-                if window >= 1:
-                    window_msg = f"{window}h"
-                else:
-                    window_msg = f"{round(window * 60)}m"
-
-                choice = notifier.ask_high_usage_action(ssid, app_name, size, window_msg)
-
-            if choice == "safe_once":
-                self.data_manager.mark_app_safe(ssid, app_name, always=False)
-                self._log_info(f"User marked {app_name} as safe (once) on {ssid}")
-            elif choice == "safe_always":
-                self.data_manager.mark_app_safe(ssid, app_name, always=True)
-                self._log_info(f"User marked {app_name} as safe (always) on {ssid}")
-            elif choice == "kill_once":
-                killed = self.data_manager.kill_app(app_name)
-                self.data_manager.mark_app_kill(ssid, app_name, always=False)
-                self._log_info(f"User killed {app_name} ({killed} procs) on {ssid}")
-            elif choice == "kill_always":
-                killed = self.data_manager.kill_app(app_name)
-                self.data_manager.mark_app_kill(ssid, app_name, always=True)
-                self._log_info(f"User killed {app_name} ({killed} procs, always) on {ssid}")
-            else:
-                self._log_info(f"High usage alert for {app_name} ({size}) on {ssid} - ignored")
-
-                notified.add(app_name)
-
-        except Exception as e:
-            self.process_manager._log_error(f"Error checking high usage apps: {e}")
-
-    def _check_new_apps(self, ssid: str, known_apps: set) -> None:
-        """Alert when a new app first accesses the network."""
-        try:
-            top_apps = self.process_manager.get_top_network_apps(limit=20, ssid=ssid)
-            for app in top_apps:
-                app_name = app.get("name", "unknown")
-                if app_name not in known_apps:
-                    known_apps.add(app_name)
-                    # Skip first-run (we don't know what was already running)
-                    if len(known_apps) > 5:
-                        notifier.send_notification(
-                            "New App Detected",
-                            f"'{app_name}' just accessed {ssid}",
-                            Urgency.NORMAL,
-                        )
-        except Exception:
-            pass
-
-    def _send_daily_summary(self, ssid: str) -> None:
-        """Send a daily usage summary notification."""
-        try:
-            ssid_data = self.data_manager.usage_data.get(ssid, {})
-            daily = ssid_data.get("daily", {})
-            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-            day_data = daily.get(yesterday, {})
-            rx = day_data.get("rx", 0)
-            tx = day_data.get("tx", 0)
-            total = rx + tx
-
-            if total > 0:
-                rx_str = self.display_manager.format_bytes(rx)
-                tx_str = self.display_manager.format_bytes(tx)
-                total_str = self.display_manager.format_bytes(total)
-                notifier.send_notification(
-                    "Daily WiFi Summary",
-                    f"{ssid} yesterday:\n"
-                    f"  Total: {total_str}\n"
-                    f"  Download: {rx_str}\n"
-                    f"  Upload: {tx_str}",
-                    Urgency.NORMAL,
-                )
-        except Exception:
-            pass
-
-    def _get_current_period_usage(self, ssid: str) -> int:
-        """Helper to get current usage based on limit interval"""
-        if ssid not in self.data_manager.limits_data:
-            return 0
-
-        interval = self.data_manager.limits_data[ssid].get("interval", "monthly")
-        ssid_data = self.data_manager.usage_data.get(ssid, {})
-        return self.display_manager._calculate_period_usage(ssid_data, interval)
+            self._log_info(f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent"                )
 
     def watch_mode(self) -> None:
         """Run in watch mode (interactive display)"""
@@ -637,26 +457,16 @@ class WiFiTracker:
 
     def set_limit(self, ssid: str, limit: str, interval: str = "monthly"):
         """Set data limit for SSID"""
-        try:
-            # Parse limit (e.g., "1GB", "500MB")
-            limit_upper = limit.upper()
-            if limit_upper.endswith("GB"):
-                limit_bytes = int(float(limit_upper[:-2]) * 1024 * 1024 * 1024)
-            elif limit_upper.endswith("MB"):
-                limit_bytes = int(float(limit_upper[:-2]) * 1024 * 1024)
-            elif limit_upper.endswith("KB"):
-                limit_bytes = int(float(limit_upper[:-2]) * 1024)
-            else:
-                limit_bytes = int(limit)
-
-            self.data_manager.set_limit(ssid, limit_bytes, interval)
-            print(
-                f"✅ Set {interval} limit for '{ssid}': {self.display_manager.format_bytes(limit_bytes)}"
-            )
-
-        except ValueError:
-            print(f"❌ Invalid limit format: {limit}")
+        limit_bytes = AlertManager.parse_size(limit)
+        if limit_bytes is None:
+            print(f"Invalid limit format: {limit}")
             print("Use format like: 1GB, 500MB, 1024KB, or raw bytes")
+            return
+
+        self.data_manager.set_limit(ssid, limit_bytes, interval)
+        print(
+            f"Set {interval} limit for '{ssid}': {self.display_manager.format_bytes(limit_bytes)}"
+        )
 
     def remove_limit(self, ssid: str):
         """Remove data limit for SSID"""
@@ -786,45 +596,15 @@ class WiFiTracker:
             print("  Example: --alert show")
             return
 
-        # Parse threshold (e.g., "5GB", "500MB", "1024KB")
-        threshold_str = args[0].upper()
-        multiplier = 1
-        if threshold_str.endswith("TB"):
-            multiplier = 1024**4
-            threshold_str = threshold_str[:-2]
-        elif threshold_str.endswith("GB"):
-            multiplier = 1024**3
-            threshold_str = threshold_str[:-2]
-        elif threshold_str.endswith("MB"):
-            multiplier = 1024**2
-            threshold_str = threshold_str[:-2]
-        elif threshold_str.endswith("KB"):
-            multiplier = 1024
-            threshold_str = threshold_str[:-2]
-        elif threshold_str.endswith("B"):
-            threshold_str = threshold_str[:-1]
-
-        try:
-            threshold_bytes = int(float(threshold_str) * multiplier)
-        except ValueError:
+        threshold_bytes = AlertManager.parse_threshold(args[0])
+        if threshold_bytes is None:
             print(f"Invalid threshold: {args[0]}")
             return
 
-        # Parse window (e.g., "1h", "30m", "2h", "1m")
-        window_str = args[1].lower()
-        if window_str.endswith("h"):
-            window_hours = float(window_str[:-1])
-        elif window_str.endswith("m"):
-            window_hours = float(window_str[:-1]) / 60
-        else:
-            try:
-                window_hours = float(window_str)
-            except ValueError:
-                print(f"Invalid time window: {args[1]}")
-                return
-
-        if window_hours < 1 / 60:
-            window_hours = 1 / 60
+        window_hours = AlertManager.parse_window(args[1])
+        if window_hours is None or window_hours < 1 / 60:
+            print(f"Invalid time window: {args[1]}")
+            return
 
         self.data_manager.set_alert_settings(
             threshold_bytes=threshold_bytes,
