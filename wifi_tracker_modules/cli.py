@@ -314,6 +314,7 @@ class WiFiTracker:
                     app.get("bytes_sent", 0),
                     app.get("bytes_recv", 0),
                     now,
+                    pid=app.get("pid", 0),
                 )
 
             # Check which apps exceed threshold within the time window
@@ -381,10 +382,9 @@ class WiFiTracker:
                     known_apps.add(app_name)
                     # Skip first-run (we don't know what was already running)
                     if len(known_apps) > 5:
-                        size = self.display_manager.format_bytes(app.get("total_bytes", 0))
                         notifier.send_notification(
                             "New App Detected",
-                            f"'{app_name}' just accessed {ssid} ({size} used)",
+                            f"'{app_name}' just accessed {ssid}",
                             Urgency.NORMAL,
                         )
         except Exception:

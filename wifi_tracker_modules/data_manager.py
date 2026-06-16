@@ -587,18 +587,21 @@ class DataManager:
         return session_rx, session_tx
 
     def update_app_usage(
-        self, ssid: str, app_name: str, bytes_sent: int, bytes_recv: int, timestamp: Optional[datetime] = None
+        self, ssid: str, app_name: str, bytes_sent: int, bytes_recv: int,
+        timestamp: Optional[datetime] = None, pid: int = 0
     ) -> None:
         """
         Track per-app network usage with a rolling 1-hour window.
         Stores DELTAS (usage since last check), not cumulative values.
+        Tracks by PID to handle multiple processes with the same name.
 
         Args:
             ssid: The SSID name.
-            app_name: Process/command name (or parent command).
+            app_name: Process/command name.
             bytes_sent: Cumulative bytes sent by this app (from /proc/pid/io).
             bytes_recv: Cumulative bytes received by this app (from /proc/pid/io).
             timestamp: Current timestamp.
+            pid: Process ID for accurate delta tracking.
         """
         if ssid not in self.usage_data:
             return
@@ -610,24 +613,26 @@ class DataManager:
         app_usage = ssid_data.setdefault("app_usage", {})
 
         if app_name not in app_usage:
-            app_usage[app_name] = {"entries": [], "prev_sent": 0, "prev_recv": 0}
+            app_usage[app_name] = {"entries": [], "pids": {}}
 
         app_data = app_usage[app_name]
         entries = app_data["entries"]
+        pids = app_data.setdefault("pids", {})
         cutoff = timestamp - timedelta(hours=1)
         cutoff_iso = cutoff.isoformat()
 
         # Remove entries older than 1 hour
         entries[:] = [e for e in entries if e.get("ts", "") > cutoff_iso]
 
-        # Compute delta from previous cumulative values
-        prev_sent = app_data.get("prev_sent", 0)
-        prev_recv = app_data.get("prev_recv", 0)
+        # Track delta per PID
+        pid_key = str(pid)
+        pids.setdefault(pid_key, {"sent": 0, "recv": 0})
+        prev_sent = pids[pid_key]["sent"]
+        prev_recv = pids[pid_key]["recv"]
 
-        # First time seeing this app: save baseline, don't record entry
-        if prev_sent == 0 and prev_recv == 0:
-            app_data["prev_sent"] = bytes_sent
-            app_data["prev_recv"] = bytes_recv
+        # First time seeing this PID: save baseline, don't record entry
+        if prev_sent == 0 and prev_recv == 0 and pid > 0:
+            pids[pid_key] = {"sent": bytes_sent, "recv": bytes_recv}
             return
 
         delta_sent = max(0, bytes_sent - prev_sent)
@@ -638,9 +643,8 @@ class DataManager:
             delta_sent = bytes_sent
             delta_recv = bytes_recv
 
-        # Save current cumulative as previous for next delta
-        app_data["prev_sent"] = bytes_sent
-        app_data["prev_recv"] = bytes_recv
+        # Save current cumulative for this PID
+        pids[pid_key] = {"sent": bytes_sent, "recv": bytes_recv}
 
         # Only add entry if there was actual usage
         if delta_sent > 0 or delta_recv > 0:
