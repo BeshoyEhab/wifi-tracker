@@ -47,12 +47,6 @@ cd wifi-tracker
 
 This installs via `uv`, `pipx`, or `pip` (whichever is available) and sets up shell completions.
 
-### From PyPI (when published)
-
-```bash
-pipx install wifi-tracker
-```
-
 ## Usage
 
 ```
