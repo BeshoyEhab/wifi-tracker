@@ -656,7 +656,7 @@ class DataManager:
         prev_recv = pids[pid_key]["recv"]
 
         # First time seeing this PID: save baseline, don't record entry
-        if prev_sent == 0 and prev_recv == 0 and pid > 0:
+        if prev_sent == 0 and prev_recv == 0:
             pids[pid_key] = {"sent": bytes_sent, "recv": bytes_recv}
             return
 
@@ -780,7 +780,9 @@ class DataManager:
         self, ssid: str, hours: int = 24
     ) -> list:
         """
-        Get hourly usage data for the graph, built from app_usage entries.
+        Get hourly usage data for the graph, built from daily.hourly
+        (interface-level counters). Falls back to app_usage entries only
+        when hourly data is missing.
 
         Args:
             ssid: The SSID name.
@@ -799,20 +801,19 @@ class DataManager:
 
             total = 0
             if ssid in self.usage_data:
-                app_usage = self.usage_data[ssid].get("app_usage", {})
-                for data in app_usage.values():
-                    for entry in data.get("entries", []):
-                        entry_ts = entry.get("ts", "")
-                        if hour_start.isoformat() <= entry_ts < hour_end.isoformat():
-                            total += entry.get("sent", 0) + entry.get("recv", 0)
+                day_key = ts.strftime("%Y-%m-%d")
+                hour_key = ts.strftime("%H")
+                daily = self.usage_data[ssid].get("daily", {})
+                day_data = daily.get(day_key, {})
+                total = day_data.get("hourly", {}).get(hour_key, 0)
 
-                # Fall back to daily hourly data if no app_usage entries
                 if total == 0:
-                    day_key = ts.strftime("%Y-%m-%d")
-                    hour_key = ts.strftime("%H")
-                    daily = self.usage_data[ssid].get("daily", {})
-                    day_data = daily.get(day_key, {})
-                    total = day_data.get("hourly", {}).get(hour_key, 0)
+                    app_usage = self.usage_data[ssid].get("app_usage", {})
+                    for data in app_usage.values():
+                        for entry in data.get("entries", []):
+                            entry_ts = entry.get("ts", "")
+                            if hour_start.isoformat() <= entry_ts < hour_end.isoformat():
+                                total += entry.get("sent", 0) + entry.get("recv", 0)
 
             hourly.append((ts.strftime("%H:00"), total))
 
