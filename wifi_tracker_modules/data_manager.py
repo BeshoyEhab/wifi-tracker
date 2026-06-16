@@ -5,6 +5,7 @@ Handles data persistence, validation, and management
 
 import json
 import shutil
+import fcntl
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -87,16 +88,18 @@ class DataManager:
         try:
             if self.data_file.exists():
                 with open(self.data_file, "r") as f:
-                    data = json.load(f)
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                    try:
+                        data = json.load(f)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
 
-                # Extract metadata if present
                 if "_metadata" in data:
                     self._metadata = data["_metadata"]
-                    del data["_metadata"]  # Remove from main data
+                    del data["_metadata"]
                 else:
                     self._metadata = {}
 
-                # Validate and migrate data structure
                 self.usage_data = self._validate_and_migrate_data(data)
             else:
                 self.usage_data = {}
@@ -111,7 +114,7 @@ class DataManager:
 
     def load_limits(self) -> Dict[str, Any]:
         """
-        Load limits data from file.
+        Load limits data from file with file locking.
 
         Returns:
             Dict[str, Any]: The loaded limits data.
@@ -119,7 +122,11 @@ class DataManager:
         try:
             if self.limits_file.exists():
                 with open(self.limits_file, "r") as f:
-                    self.limits_data = json.load(f)
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                    try:
+                        self.limits_data = json.load(f)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
             else:
                 self.limits_data = {}
 
@@ -131,28 +138,28 @@ class DataManager:
 
     def save_data(self) -> bool:
         """
-        Save usage data to file.
+        Save usage data to file with file locking.
 
         Returns:
             bool: True if save was successful, False otherwise.
         """
         try:
-            # Create backup of existing file
             if self.data_file.exists():
                 backup_file = self.data_file.with_suffix(".json.bak")
-                # Use replace (atomic) instead of rename/rename to avoid issues
                 try:
                     shutil.copy2(self.data_file, backup_file)
                 except OSError:
-                    pass  # Ignore backup errors if necessary
+                    pass
 
-            # Prepare data with metadata
             data_to_save = self.usage_data.copy()
             data_to_save["_metadata"] = self._metadata
 
-            # Write new data
             with open(self.data_file, "w") as f:
-                json.dump(data_to_save, f, indent=2, default=str)
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    json.dump(data_to_save, f, indent=2, default=str)
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
             return True
 
@@ -162,14 +169,18 @@ class DataManager:
 
     def save_limits(self) -> bool:
         """
-        Save limits data to file.
+        Save limits data to file with file locking.
 
         Returns:
             bool: True if save was successful, False otherwise.
         """
         try:
             with open(self.limits_file, "w") as f:
-                json.dump(self.limits_data, f, indent=2)
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    json.dump(self.limits_data, f, indent=2)
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
             return True
 
         except (PermissionError, OSError) as e:
