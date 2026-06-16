@@ -445,6 +445,15 @@ class WiFiTracker:
             )
             print(f"Systemd Service: {systemd_status}")
             print(f"Total instances: {process_info['total_instances']}")
+            if not process_info["daemon_running"]:
+                if self.display_manager.console:
+                    self.display_manager.console.print(
+                        "\n[yellow]⚠ Daemon not running — live rates unavailable. Start with: wifi-tracker daemon[/]"
+                    )
+                else:
+                    print(
+                        "\n⚠ Daemon not running — live rates unavailable. Start with: wifi-tracker daemon"
+                    )
 
         except Exception as e:
             print(f"❌ Error displaying status: {e}")
@@ -462,6 +471,15 @@ class WiFiTracker:
             ssid = self.monitor.get_current_ssid()
             top_apps = self.process_manager.get_top_network_apps(limit=10, ssid=ssid)
             self.display_manager.print_top_network_apps(top_apps)
+            if not self.process_manager.is_daemon_running():
+                if self.display_manager.console:
+                    self.display_manager.console.print(
+                        "  [yellow]⚠ Daemon not running — showing snapshot only. Start with: wifi-tracker daemon[/]"
+                    )
+                else:
+                    print(
+                        "  ⚠ Daemon not running — showing snapshot only. Start with: wifi-tracker daemon"
+                    )
         except Exception as e:
             print(f"❌ Error getting top apps: {e}")
 
@@ -1032,6 +1050,15 @@ def main():
                     top_app,
                     range_label,
                 )
+                if not tracker.process_manager.is_daemon_running():
+                    if tracker.display_manager.console:
+                        tracker.display_manager.console.print(
+                            "  [yellow]⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon[/]"
+                        )
+                    else:
+                        print(
+                            "  ⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon"
+                        )
         elif command == "graph":
             target_ssid = getattr(args, "ssid", None)
             if not target_ssid:
@@ -1048,6 +1075,15 @@ def main():
                 tracker.display_manager.print_ascii_graph(
                     hourly, target_ssid, range_label=range_str
                 )
+                if not tracker.process_manager.is_daemon_running():
+                    if tracker.display_manager.console:
+                        tracker.display_manager.console.print(
+                            "  [yellow]⚠ Daemon not running — data may be incomplete, start with: wifi-tracker daemon[/]"
+                        )
+                    else:
+                        print(
+                            "  ⚠ Daemon not running — data may be incomplete, start with: wifi-tracker daemon"
+                        )
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
