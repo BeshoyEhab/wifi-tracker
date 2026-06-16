@@ -792,7 +792,7 @@ class DataManager:
         now = datetime.now()
         hourly = []
 
-        for h in range(hours, 0, -1):
+        for h in range(hours, -1, -1):
             ts = now - timedelta(hours=h)
             hour_start = ts.replace(minute=0, second=0, microsecond=0)
             hour_end = hour_start + timedelta(hours=1)
@@ -814,7 +814,7 @@ class DataManager:
                     day_data = daily.get(day_key, {})
                     total = day_data.get("hourly", {}).get(hour_key, 0)
 
-            hourly.append((ts.strftime("%H:%M"), total))
+            hourly.append((ts.strftime("%H:00"), total))
 
         return hourly
 
