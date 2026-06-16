@@ -328,10 +328,12 @@ class WiFiTracker:
 
                 # Skip if already safe (one-time or always)
                 if self.data_manager.is_safe_app(ssid, app_name):
+                    self.data_manager.consume_safe_onetime(ssid, app_name)
                     continue
 
                 # Auto-kill if marked for killing (one-time or always)
                 if self.data_manager.is_kill_app(ssid, app_name):
+                    self.data_manager.consume_kill_onetime(ssid, app_name)
                     killed = self.data_manager.kill_app(app_name)
                     if killed:
                         self.process_manager._log_error(
@@ -637,8 +639,10 @@ class WiFiTracker:
 
     def status_all_mode(self) -> None:
         """Show detailed statistics for all SSIDs"""
-        # Delegated to display manager
-        self.status_mode()  # For now status mode prints everything with Rich table anyway
+        self.display_manager.print_detailed_stats(
+            self.data_manager.usage_data,
+            self.data_manager.limits_data,
+        )
 
     def top_apps_mode(self) -> None:
         """Show top 10 applications"""
@@ -1138,8 +1142,8 @@ def main():
                 # Get total usage for this SSID
                 ssid_data = tracker.data_manager.usage_data.get(current_ssid, {})
                 total = ssid_data.get("total_rx", 0) + ssid_data.get("total_tx", 0)
-                rate_up = measurement.get("rx_rate", 0)
-                rate_down = measurement.get("tx_rate", 0)
+                rate_up = measurement.get("tx_rate", 0)
+                rate_down = measurement.get("rx_rate", 0)
                 # Get limit
                 limit_info = tracker.data_manager.limits_data.get(current_ssid, {})
                 limit = limit_info.get("limit", 0)

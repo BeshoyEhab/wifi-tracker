@@ -258,15 +258,20 @@ class DataManager:
         if ssid not in self.usage_data:
             return False
         ssid_data = self.usage_data[ssid]
-        # Check permanent safe list
         if app_name in ssid_data.get("safe_apps", []):
             return True
-        # Check one-time safe list (consumed on use)
-        one_time = ssid_data.get("safe_apps_onetime", [])
-        if app_name in one_time:
-            one_time.remove(app_name)
+        if app_name in ssid_data.get("safe_apps_onetime", []):
             return True
         return False
+
+    def consume_safe_onetime(self, ssid: str, app_name: str) -> None:
+        """Remove app from one-time safe list after use."""
+        if ssid not in self.usage_data:
+            return
+        one_time = self.usage_data[ssid].get("safe_apps_onetime", [])
+        if app_name in one_time:
+            one_time.remove(app_name)
+            self.save_data()
 
     def mark_app_safe(self, ssid: str, app_name: str, always: bool = False) -> None:
         """Mark an app as safe for an SSID.
@@ -293,15 +298,20 @@ class DataManager:
         if ssid not in self.usage_data:
             return False
         ssid_data = self.usage_data[ssid]
-        # Check permanent kill list
         if app_name in ssid_data.get("kill_apps", []):
             return True
-        # Check one-time kill list (consumed on use)
-        one_time = ssid_data.get("kill_apps_onetime", [])
-        if app_name in one_time:
-            one_time.remove(app_name)
+        if app_name in ssid_data.get("kill_apps_onetime", []):
             return True
         return False
+
+    def consume_kill_onetime(self, ssid: str, app_name: str) -> None:
+        """Remove app from one-time kill list after use."""
+        if ssid not in self.usage_data:
+            return
+        one_time = self.usage_data[ssid].get("kill_apps_onetime", [])
+        if app_name in one_time:
+            one_time.remove(app_name)
+            self.save_data()
 
     def mark_app_kill(self, ssid: str, app_name: str, always: bool = False) -> None:
         """Mark an app to be killed when exceeding limits.
@@ -371,6 +381,9 @@ class DataManager:
                 "app_usage": ssid_data.get("app_usage", {}),
                 "known_gateways": ssid_data.get("known_gateways", []),
                 "safe_apps": ssid_data.get("safe_apps", []),
+                "safe_apps_onetime": ssid_data.get("safe_apps_onetime", []),
+                "kill_apps": ssid_data.get("kill_apps", []),
+                "kill_apps_onetime": ssid_data.get("kill_apps_onetime", []),
                 "accuracy_stats": ssid_data.get(
                     "accuracy_stats",
                     {
@@ -524,6 +537,7 @@ class DataManager:
                 "peak_tx_rate": 0,
                 "connection_duration": 0,
                 "data_points": 0,
+                "hourly": {},
             }
 
         # Get daily data and update it
@@ -531,6 +545,11 @@ class DataManager:
         daily_data["rx"] = daily_data.get("rx", 0) + rx_delta
         daily_data["tx"] = daily_data.get("tx", 0) + tx_delta
         daily_data["last_connection"] = timestamp.isoformat()
+
+        # Track hourly data for graph fallback
+        hour_key = timestamp.strftime("%H")
+        hourly = daily_data.setdefault("hourly", {})
+        hourly[hour_key] = hourly.get(hour_key, 0) + rx_delta + tx_delta
 
         # Safely update peak rates
         current_peak_rx = daily_data.get("peak_rx_rate", 0) or 0
@@ -774,6 +793,14 @@ class DataManager:
                         entry_ts = entry.get("ts", "")
                         if hour_start.isoformat() <= entry_ts < hour_end.isoformat():
                             total += entry.get("sent", 0) + entry.get("recv", 0)
+
+                # Fall back to daily hourly data if no app_usage entries
+                if total == 0:
+                    day_key = ts.strftime("%Y-%m-%d")
+                    hour_key = ts.strftime("%H")
+                    daily = self.usage_data[ssid].get("daily", {})
+                    day_data = daily.get(day_key, {})
+                    total = day_data.get("hourly", {}).get(hour_key, 0)
 
             hourly.append((ts.strftime("%H:%M"), total))
 
