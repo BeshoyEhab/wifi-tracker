@@ -51,73 +51,61 @@ pipx uninstall wifi-tracker
 
 ## Usage
 
-### Basic Commands
+```
+wifi-tracker <command> [options]
+```
 
-- **Start Daemon Mode** (background monitoring):
-
-  ```bash
-  wifi-tracker --daemon
-  ```
-
-- **Watch Mode** (interactive display):
-
-  ```bash
-  wifi-tracker --watch
-  ```
-
-- **Show Status** (current statistics):
-
-  ```bash
-  wifi-tracker --status
-  ```
-
-- **Stop Daemon**:
-
-  ```bash
-  wifi-tracker --stop
-  ```
-
-- **Set Data Limit** (e.g., 1GB monthly for "MyWiFi"):
-
-  ```bash
-  wifi-tracker --limit MyWiFi 1GB monthly
-  ```
-
-- **Remove Limit**:
-
-  ```bash
-  wifi-tracker --remove-limit MyWiFi
-  ```
-
-- **View All Statistics** (last 90 days):
-
-  ```bash
-  wifi-tracker --status-all
-  ```
-
-- **Top Network Apps**:
-
-  ```bash
-  wifi-tracker --top-apps
-  ```
-
-- **Clean Old Data** (e.g., older than 30 days):
-
-  ```bash
-  wifi-tracker --cleanup 30
-  ```
-
-- **Install/Remove Service (Systemd)**:
-
-  ```bash
-  wifi-tracker --install-service
-  wifi-tracker --remove-service
-  ```
-
-### Options
-
-- `--interface` or `-i`: Specify network interface (auto-detected if not provided).
+Global options:
+- `--interface` / `-i`: Specify network interface (auto-detected if not provided).
 - `--interval`: Update interval in seconds (default: 0.5).
+
+### Monitoring
+
+```bash
+wifi-tracker daemon                          # Start background monitoring
+wifi-tracker watch                           # Live interactive dashboard
+wifi-tracker status                          # Show usage statistics
+wifi-tracker status --all                    # Show all networks
+wifi-tracker status --from-date 2025-06-01   # Stats from a date
+wifi-tracker today                           # Quick one-line status
+wifi-tracker graph                           # ASCII usage graph (24h)
+wifi-tracker graph MyWiFi                    # Graph for specific network
+wifi-tracker top-apps                        # Show apps using the network
+wifi-tracker networks                        # Show saved networks
+```
+
+### Limits & Alerts
+
+```bash
+wifi-tracker limit HomeWiFi 5GB monthly      # Set data cap
+wifi-tracker remove-limit HomeWiFi           # Remove a limit
+wifi-tracker usage-from HomeWiFi 2weeks      # Custom usage start date
+wifi-tracker alert 2GB 1h                    # Alert on 2GB/hour
+wifi-tracker alert show                      # Show current alert settings
+```
+
+### Security
+
+```bash
+wifi-tracker trust-gateway HomeWiFi 10.0.0.1 # Trust your router
+wifi-tracker trusted-gateways                # List trusted gateways
+wifi-tracker mark-safe HomeWiFi firefox      # Mark app as safe
+wifi-tracker mark-safe HomeWiFi firefox --always  # Always safe
+wifi-tracker safe-apps                       # List trusted apps
+wifi-tracker kill-app HomeWiFi malware       # Kill an app
+wifi-tracker kill-app HomeWiFi malware --always   # Auto-kill on limit
+wifi-tracker kill-list                       # List auto-kill apps
+```
+
+### Management
+
+```bash
+wifi-tracker stop                            # Stop the daemon
+wifi-tracker cleanup                         # Clean data older than 90 days
+wifi-tracker cleanup 30                      # Clean data older than 30 days
+wifi-tracker install-service                 # Install systemd service
+wifi-tracker remove-service                  # Remove systemd service
+```
 
 ## Project Structure
 
