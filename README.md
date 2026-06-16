@@ -6,6 +6,8 @@
 
 A comprehensive tool for monitoring WiFi usage with daemon support, real-time statistics, and data limits.
 
+![Demo](demo.gif)
+
 ## Features
 
 - **Real-time Monitoring**: Track WiFi usage in real-time with live rates and session data.
