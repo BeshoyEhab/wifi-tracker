@@ -18,7 +18,7 @@ A comprehensive tool for monitoring WiFi usage with daemon support, real-time st
 - **Top Apps**: See which applications consume the most network bandwidth, with option to auto-kill offenders.
 - **MITM/Rogue Gateway Detection**: Detects unknown gateways, prompts to trust or block, with OUI vendor lookup.
 - **Historical Data**: View usage statistics for all networks over the last 90 days (auto-cleaned).
-- **ASCII Usage Graph**: Visual 24-hour usage graph per network.
+- **ASCII Usage Graph**: Visual usage graph per network (1h, 24h, 7d, 30d, 12m).
 - **Shell Completions**: Tab completion for bash, zsh, and fish.
 - **Desktop Notifications**: Alerts via `notify-send`, `notify-send.sh`, or `zenity`.
 - **Systemd Integration**: Install as a persistent system service.
@@ -67,7 +67,9 @@ wifi-tracker status --all                        # Show all networks
 wifi-tracker status --from-date 2025-06-01       # Stats from a date
 wifi-tracker status --from-date 2025-06-01 --to-date 2025-06-15  # Date range
 wifi-tracker today                               # Quick one-line status
-wifi-tracker graph                               # ASCII usage graph (24h)
+wifi-tracker graph                               # ASCII usage graph (24h default)
+wifi-tracker graph --range 1h                    # Last hour per minute
+wifi-tracker graph --range 7d                    # Last 7 days
 wifi-tracker graph MyWiFi                        # Graph for specific network
 wifi-tracker top-apps                            # Show apps using the network
 wifi-tracker networks                            # Show saved networks

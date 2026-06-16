@@ -25,7 +25,7 @@ class ProcessManager:
         log_file (Path): Path to the daemon log file.
         error_log (Path): Path to the daemon error log file.
     """
-    
+
     def __init__(self, script_name: str = "wifi-tracker"):
         """
         Initialize the ProcessManager.
@@ -35,14 +35,14 @@ class ProcessManager:
         """
         self.script_name = script_name
         # Use centralized config for paths
-        self.pid_file = Config.get_pid_file() 
+        self.pid_file = Config.get_pid_file()
         self.log_file = Config.get_log_file()
         self.error_log = Config.get_error_log_file()
-        
+
         # Ensure directories exist
         self.pid_file.parent.mkdir(parents=True, exist_ok=True)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     def find_all_instances(self) -> List[psutil.Process]:
         """
         Find ALL instances of wifi-tracker regardless of command line options.
@@ -51,38 +51,44 @@ class ProcessManager:
             List[psutil.Process]: List of process objects.
         """
         instances = []
-        
+
         try:
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
                     # Check if process name or command line contains our script
-                    cmdline = proc.info.get('cmdline', [])
+                    cmdline = proc.info.get("cmdline", [])
                     if not cmdline:
                         continue
-                    
+
                     # Convert cmdline to string for easier matching
-                    cmdline_str = ' '.join(cmdline)
-                    
+                    cmdline_str = " ".join(cmdline)
+
                     # Match various ways the script might be invoked
-                    if any([
-                        self.script_name in cmdline_str,
-                        'wifi-tracker' in cmdline_str,
-                        'wifi_tracker' in cmdline_str,
-                        any('wifi-tracker' in arg for arg in cmdline),
-                        any('wifi_tracker' in arg for arg in cmdline)
-                    ]):
+                    if any(
+                        [
+                            self.script_name in cmdline_str,
+                            "wifi-tracker" in cmdline_str,
+                            "wifi_tracker" in cmdline_str,
+                            any("wifi-tracker" in arg for arg in cmdline),
+                            any("wifi_tracker" in arg for arg in cmdline),
+                        ]
+                    ):
                         # Skip the current process
                         if proc.pid != os.getpid():
                             instances.append(proc)
-                            
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
                     continue
-                    
+
         except Exception as e:
             self._log_error(f"Error finding instances: {e}")
-        
+
         return instances
-    
+
     def kill_all_instances(self, exclude_current: bool = True) -> int:
         """
         Kill ALL instances of wifi-tracker with any options.
@@ -95,54 +101,60 @@ class ProcessManager:
         """
         killed_count = 0
         current_pid = os.getpid()
-        
+
         # Find all instances
         instances = self.find_all_instances()
-        
+
         if not instances:
             return 0
-        
+
         # First pass: Send SIGTERM (graceful shutdown)
         for proc in instances:
             try:
                 if exclude_current and proc.pid == current_pid:
                     continue
-                    
-                self._log_info(f"Sending SIGTERM to PID {proc.pid}: {' '.join(proc.cmdline())}")
+
+                self._log_info(
+                    f"Sending SIGTERM to PID {proc.pid}: {' '.join(proc.cmdline())}"
+                )
                 proc.terminate()
                 killed_count += 1
-                
+
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        
+
         # Wait for graceful shutdown
         if killed_count > 0:
             time.sleep(2)
-        
+
         # Second pass: Force kill remaining processes
         remaining_instances = self.find_all_instances()
         for proc in remaining_instances:
             try:
                 if exclude_current and proc.pid == current_pid:
                     continue
-                    
+
                 if proc.is_running():
-                    self._log_info(f"Force killing PID {proc.pid}: {' '.join(proc.cmdline())}")
+                    self._log_info(
+                        f"Force killing PID {proc.pid}: {' '.join(proc.cmdline())}"
+                    )
                     proc.kill()
-                    
+
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        
+
         # Final verification with delay
         time.sleep(1)
         final_instances = self.find_all_instances()
-        final_count = len([p for p in final_instances if not exclude_current or p.pid != current_pid])
-        
+        final_count = len(
+            [p for p in final_instances if not exclude_current or p.pid != current_pid]
+        )
+
         if final_count > 0:
             self._log_error(f"Warning: {final_count} instances may still be running")
-        
+
         return killed_count
-    
+
     def is_daemon_running(self) -> bool:
         """
         Check if daemon is currently running.
@@ -152,36 +164,36 @@ class ProcessManager:
         """
         if not self.pid_file.exists():
             return False
-        
+
         try:
-            with open(self.pid_file, 'r') as f:
+            with open(self.pid_file, "r") as f:
                 pid = int(f.read().strip())
-            
+
             # Check if process with this PID exists and is our script
             if psutil.pid_exists(pid):
                 proc = psutil.Process(pid)
-                cmdline_str = ' '.join(proc.cmdline())
-                if self.script_name in cmdline_str or 'wifi-tracker' in cmdline_str:
+                cmdline_str = " ".join(proc.cmdline())
+                if self.script_name in cmdline_str or "wifi-tracker" in cmdline_str:
                     return True
-            
+
             # PID file exists but process doesn't, clean up
             self.pid_file.unlink()
             return False
-            
+
         except (ValueError, FileNotFoundError, psutil.NoSuchProcess):
             # Clean up invalid PID file
             if self.pid_file.exists():
                 self.pid_file.unlink()
             return False
-    
+
     def create_pid_file(self) -> None:
         """Create PID file for daemon process."""
         try:
-            with open(self.pid_file, 'w') as f:
+            with open(self.pid_file, "w") as f:
                 f.write(str(os.getpid()))
         except Exception as e:
             self._log_error(f"Failed to create PID file: {e}")
-    
+
     def remove_pid_file(self) -> None:
         """Remove the PID file."""
         if self.pid_file.exists():
@@ -212,23 +224,25 @@ class ProcessManager:
         """
         return self.get_systemd_service_path().exists()
 
-    def install_systemd_service(self, executable_path: str, args: str = "daemon") -> bool:
+    def install_systemd_service(
+        self, executable_path: str, args: str = "daemon"
+    ) -> bool:
         """
         Generate and install systemd user service.
-        
+
         Args:
             executable_path: Full path to the wifi-tracker executable
             args: Arguments to pass to the executable
-            
+
         Returns:
             bool: True if successful
         """
         service_path = self.get_systemd_service_path()
         service_dir = service_path.parent
-        
+
         # Ensure directory exists
         service_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Service file content
         content = f"""[Unit]
 Description=WiFi Usage Tracker Daemon
@@ -245,23 +259,25 @@ StandardError=journal
 [Install]
 WantedBy=default.target
 """
-        
+
         try:
             # Write service file
-            with open(service_path, 'w') as f:
+            with open(service_path, "w") as f:
                 f.write(content)
-            
+
             # Reload systemd
-            subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
-            
+            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+
             # Enable and start
-            subprocess.run(['systemctl', '--user', 'enable', 'wifi-tracker'], check=True)
-            subprocess.run(['systemctl', '--user', 'start', 'wifi-tracker'], check=True)
-            
+            subprocess.run(
+                ["systemctl", "--user", "enable", "wifi-tracker"], check=True
+            )
+            subprocess.run(["systemctl", "--user", "start", "wifi-tracker"], check=True)
+
             print(f"✅ Systemd service installed at: {service_path}")
             print("To view logs: journalctl --user -u wifi-tracker -f")
             return True
-            
+
         except Exception as e:
             print(f"❌ Failed to install systemd service: {e}")
             return False
@@ -274,26 +290,34 @@ WantedBy=default.target
             bool: True if successful.
         """
         service_path = self.get_systemd_service_path()
-        
+
         try:
             # Stop and disable
-            subprocess.run(['systemctl', '--user', 'stop', 'wifi-tracker'], stderr=subprocess.DEVNULL)
-            subprocess.run(['systemctl', '--user', 'disable', 'wifi-tracker'], stderr=subprocess.DEVNULL)
-            
+            subprocess.run(
+                ["systemctl", "--user", "stop", "wifi-tracker"],
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["systemctl", "--user", "disable", "wifi-tracker"],
+                stderr=subprocess.DEVNULL,
+            )
+
             # Remove file
             if service_path.exists():
                 service_path.unlink()
-                
+
             # Reload
-            subprocess.run(['systemctl', '--user', 'daemon-reload'], stderr=subprocess.DEVNULL)
-            
+            subprocess.run(
+                ["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL
+            )
+
             print("✅ Systemd service removed")
             return True
-            
+
         except Exception as e:
             print(f"❌ Failed to remove systemd service: {e}")
             return False
-    
+
     def daemonize(self) -> None:
         """Daemonize the current process."""
         try:
@@ -304,12 +328,12 @@ WantedBy=default.target
         except OSError as e:
             self._log_error(f"First fork failed: {e}")
             sys.exit(1)
-        
+
         # Decouple from parent environment
-        os.chdir('/')
+        os.chdir("/")
         os.setsid()
         os.umask(0o022)
-        
+
         try:
             # Second fork
             pid = os.fork()
@@ -318,19 +342,19 @@ WantedBy=default.target
         except OSError as e:
             self._log_error(f"Second fork failed: {e}")
             sys.exit(1)
-        
+
         # Redirect standard file descriptors
         sys.stdout.flush()
         sys.stderr.flush()
-        
+
         # Redirect to /dev/null
-        with open('/dev/null', 'r') as dev_null_r:
+        with open("/dev/null", "r") as dev_null_r:
             os.dup2(dev_null_r.fileno(), sys.stdin.fileno())
-        
-        with open('/dev/null', 'w') as dev_null_w:
+
+        with open("/dev/null", "w") as dev_null_w:
             os.dup2(dev_null_w.fileno(), sys.stdout.fileno())
             os.dup2(dev_null_w.fileno(), sys.stderr.fileno())
-    
+
     def setup_signal_handlers(self, cleanup_callback=None) -> None:
         """
         Setup signal handlers for graceful shutdown.
@@ -338,38 +362,39 @@ WantedBy=default.target
         Args:
             cleanup_callback (callable, optional): function to call on exit.
         """
+
         def signal_handler(signum, frame):
             self._log_info(f"Received signal {signum}, shutting down gracefully...")
             if cleanup_callback:
                 cleanup_callback()
             sys.exit(0)
-        
+
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGUSR1, signal_handler)
-    
+
     def _log_info(self, message: str) -> None:
         """Log info message to log file."""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] INFO: {message}\n"
-        
+
         try:
-            with open(self.log_file, 'a') as f:
+            with open(self.log_file, "a") as f:
                 f.write(log_message)
         except Exception:
             pass  # Fail silently in daemon mode
-    
+
     def _log_error(self, message: str) -> None:
         """Log error message to error log."""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] ERROR: {message}\n"
-        
+
         try:
-            with open(self.error_log, 'a') as f:
+            with open(self.error_log, "a") as f:
                 f.write(log_message)
         except Exception:
             pass  # Fail silently in daemon mode
-    
+
     def get_process_info(self) -> Dict[str, Any]:
         """
         Get information about current process and instances.
@@ -379,18 +404,20 @@ WantedBy=default.target
         """
         instances = self.find_all_instances()
         daemon_running = self.is_daemon_running()
-        
+
         return {
-            'current_pid': os.getpid(),
-            'daemon_running': daemon_running,
-            'total_instances': len(instances),
-            'instance_pids': [p.pid for p in instances],
-            'pid_file_exists': self.pid_file.exists(),
-            'log_file': str(self.log_file),
-            'error_log': str(self.error_log)
+            "current_pid": os.getpid(),
+            "daemon_running": daemon_running,
+            "total_instances": len(instances),
+            "instance_pids": [p.pid for p in instances],
+            "pid_file_exists": self.pid_file.exists(),
+            "log_file": str(self.log_file),
+            "error_log": str(self.error_log),
         }
-        
-    def get_top_network_apps(self, limit: int = 10, ssid: str = None) -> List[Dict[str, Any]]:
+
+    def get_top_network_apps(
+        self, limit: int = 10, ssid: str = None
+    ) -> List[Dict[str, Any]]:
         """
         Get top applications using the network.
 
@@ -413,7 +440,7 @@ WantedBy=default.target
             processes = {}
 
             # First, get processes with active connections
-            for conn in psutil.net_connections(kind='inet'):
+            for conn in psutil.net_connections(kind="inet"):
                 try:
                     if not conn.pid:
                         continue
@@ -423,107 +450,114 @@ WantedBy=default.target
                         name = proc.name()
                         username = proc.username()
                         try:
-                            parent_name = proc.parent().name() if proc.parent() else name
+                            parent_name = (
+                                proc.parent().name() if proc.parent() else name
+                            )
                         except (psutil.NoSuchProcess, psutil.AccessDenied):
                             parent_name = name
 
                     if conn.pid not in processes:
                         processes[conn.pid] = {
-                            'pid': conn.pid,
-                            'name': name,
-                            'parent': parent_name,
-                            'user': username,
-                            'bytes_sent': 0,
-                            'bytes_recv': 0,
-                            'connections': 0,
-                            'local_addrs': [],
-                            'remote_addrs': [],
+                            "pid": conn.pid,
+                            "name": name,
+                            "parent": parent_name,
+                            "user": username,
+                            "bytes_sent": 0,
+                            "bytes_recv": 0,
+                            "connections": 0,
+                            "local_addrs": [],
+                            "remote_addrs": [],
                         }
 
-                    processes[conn.pid]['connections'] += 1
+                    processes[conn.pid]["connections"] += 1
                     local = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else ""
                     remote = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else ""
                     if local:
-                        processes[conn.pid]['local_addrs'].append(local)
+                        processes[conn.pid]["local_addrs"].append(local)
                     if remote:
-                        processes[conn.pid]['remote_addrs'].append(remote)
+                        processes[conn.pid]["remote_addrs"].append(remote)
 
-                except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, psutil.ZombieProcess):
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    AttributeError,
+                    psutil.ZombieProcess,
+                ):
                     continue
 
             # Read /proc/{pid}/io for I/O bytes
             for pid, data in processes.items():
                 try:
                     io_path = f"/proc/{pid}/io"
-                    with open(io_path, 'r') as f:
+                    with open(io_path, "r") as f:
                         for line in f:
-                            if line.startswith('rchar:'):
-                                data['bytes_recv'] = int(line.split(':')[1].strip())
-                            elif line.startswith('wchar:'):
-                                data['bytes_sent'] = int(line.split(':')[1].strip())
-                    data['total_bytes'] = data['bytes_sent'] + data['bytes_recv']
+                            if line.startswith("rchar:"):
+                                data["bytes_recv"] = int(line.split(":")[1].strip())
+                            elif line.startswith("wchar:"):
+                                data["bytes_sent"] = int(line.split(":")[1].strip())
+                    data["total_bytes"] = data["bytes_sent"] + data["bytes_recv"]
                 except (FileNotFoundError, PermissionError, ValueError):
-                    data['total_bytes'] = 0
+                    data["total_bytes"] = 0
 
             # Merge with saved app_usage from data file
             saved_apps = {}
             if ssid:
                 try:
                     from .data_manager import DataManager
+
                     dm = DataManager()
-                    app_usage = dm.usage_data.get(ssid, {}).get('app_usage', {})
+                    app_usage = dm.usage_data.get(ssid, {}).get("app_usage", {})
                     for app_name, data in app_usage.items():
-                        entries = data.get('entries', [])
-                        total_sent = sum(e.get('sent', 0) for e in entries)
-                        total_recv = sum(e.get('recv', 0) for e in entries)
+                        entries = data.get("entries", [])
+                        total_sent = sum(e.get("sent", 0) for e in entries)
+                        total_recv = sum(e.get("recv", 0) for e in entries)
                         total = total_sent + total_recv
                         if total > 0:
                             saved_apps[app_name] = {
-                                'name': app_name,
-                                'bytes_sent': total_sent,
-                                'bytes_recv': total_recv,
-                                'total_bytes': total,
-                                'connections': 0,
-                                'user': '-',
-                                'parent': app_name,
+                                "name": app_name,
+                                "bytes_sent": total_sent,
+                                "bytes_recv": total_recv,
+                                "total_bytes": total,
+                                "connections": 0,
+                                "user": "-",
+                                "parent": app_name,
                             }
                 except Exception:
                     pass
 
             # Build active app names set (by name, not pid)
-            active_names = {d['name'] for d in processes.values()}
+            active_names = {d["name"] for d in processes.values()}
 
             # Add saved apps that aren't currently active
             for app_name, app_data in saved_apps.items():
                 if app_name not in active_names:
                     # Try to find the PID if the process is running
                     for pid, pdata in processes.items():
-                        if pdata['name'] == app_name:
-                            app_data['pid'] = pid
-                            app_data['connections'] = pdata['connections']
-                            app_data['user'] = pdata['user']
+                        if pdata["name"] == app_name:
+                            app_data["pid"] = pid
+                            app_data["connections"] = pdata["connections"]
+                            app_data["user"] = pdata["user"]
                             break
-                    processes[app_data.get('pid', 0)] = app_data
+                    processes[app_data.get("pid", 0)] = app_data
 
             # Convert to list and sort by total bytes (descending)
             sorted_apps = sorted(
-                processes.values(),
-                key=lambda x: x.get('total_bytes', 0),
-                reverse=True
+                processes.values(), key=lambda x: x.get("total_bytes", 0), reverse=True
             )
 
             # Filter out processes with no activity
             active_apps = [
-                app for app in sorted_apps
-                if app.get('total_bytes', 0) > 0 or app.get('connections', 0) > 0
+                app
+                for app in sorted_apps
+                if app.get("total_bytes", 0) > 0 or app.get("connections", 0) > 0
             ]
 
             # Add system network I/O info to each entry
             for app in active_apps:
-                app['sys_net_sent'] = sys_net.bytes_sent if sys_net else 0
-                app['sys_net_recv'] = sys_net.bytes_recv if sys_net else 0
+                app["sys_net_sent"] = sys_net.bytes_sent if sys_net else 0
+                app["sys_net_recv"] = sys_net.bytes_recv if sys_net else 0
 
-            return active_apps[:min(limit, len(active_apps))]
+            return active_apps[: min(limit, len(active_apps))]
 
         except Exception as e:
             self._log_error(f"Error getting top network apps: {e}")

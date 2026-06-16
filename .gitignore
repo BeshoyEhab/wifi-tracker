@@ -7,6 +7,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Testing / linting
+.pytest_cache/
+.ruff_cache/
+
 # Distribution / packaging
 .Python
 build/

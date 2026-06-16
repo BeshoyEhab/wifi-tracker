@@ -62,7 +62,9 @@ class WiFiTracker:
         self.data_manager = DataManager()
         self.display_manager = DisplayManager()
         self.alert_manager = AlertManager(self.data_manager, self.process_manager)
-        self.app_manager = AppManager(self.data_manager, self.process_manager, self.display_manager)
+        self.app_manager = AppManager(
+            self.data_manager, self.process_manager, self.display_manager
+        )
 
         # Update interface from monitor if auto-detected
         if not self.interface:
@@ -181,7 +183,9 @@ class WiFiTracker:
 
                     now_hour = datetime.now().hour
                     if now_hour == 0 and last_daily_summary_hour != 0:
-                        self.alert_manager.send_daily_summary(current_ssid, self.display_manager)
+                        self.alert_manager.send_daily_summary(
+                            current_ssid, self.display_manager
+                        )
                     last_daily_summary_hour = now_hour
 
                 current_time = time.time()
@@ -199,7 +203,9 @@ class WiFiTracker:
 
         self._cleanup()
 
-    def _monitoring_tick(self, measurement: dict, current_ssid: str, notified_high_usage: set) -> None:
+    def _monitoring_tick(
+        self, measurement: dict, current_ssid: str, notified_high_usage: set
+    ) -> None:
         """Single iteration of the monitoring loop (shared by daemon and watch mode)."""
         self._check_connection_change(current_ssid)
 
@@ -216,11 +222,18 @@ class WiFiTracker:
                 measurement.get("gateway_ip"),
             )
 
-            current_usage = self.alert_manager.get_current_period_usage(current_ssid, self.display_manager)
+            current_usage = self.alert_manager.get_current_period_usage(
+                current_ssid, self.display_manager
+            )
             self.alert_manager.check_limits(current_ssid, current_usage)
 
-    def _check_high_usage_periodically(self, current_ssid: str, notified_high_usage: set,
-                                        last_check_time: float, interval: float = 60) -> float:
+    def _check_high_usage_periodically(
+        self,
+        current_ssid: str,
+        notified_high_usage: set,
+        last_check_time: float,
+        interval: float = 60,
+    ) -> float:
         """Check high-usage apps if enough time has passed. Returns updated last_check_time."""
         now = time.time()
         if now - last_check_time >= interval:
@@ -242,15 +255,23 @@ class WiFiTracker:
             return
 
         # Unknown gateway - ask user
-        choice = notifier.ask_gateway_trust(ssid, gateway_ip, gateway_mac or "", vendor or "")
+        choice = notifier.ask_gateway_trust(
+            ssid, gateway_ip, gateway_mac or "", vendor or ""
+        )
 
         if choice == "trust":
             self.data_manager.add_known_gateway(ssid, gateway_ip, gateway_mac, vendor)
-            self._log_info(f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}")
+            self._log_info(
+                f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}"
+            )
         elif choice == "block":
-            self._log_info(f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}")
+            self._log_info(
+                f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}"
+            )
         else:
-            self._log_info(f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent"                )
+            self._log_info(
+                f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent"
+            )
 
     def watch_mode(self) -> None:
         """Run in watch mode (interactive display)"""
@@ -281,7 +302,9 @@ class WiFiTracker:
                     measurement = self.monitor.get_measurement()
                     current_ssid = measurement.get("ssid") if measurement else None
 
-                    self._monitoring_tick(measurement, current_ssid, notified_high_usage)
+                    self._monitoring_tick(
+                        measurement, current_ssid, notified_high_usage
+                    )
 
                     if measurement and current_ssid:
                         last_app_check_time = self._check_high_usage_periodically(
@@ -557,13 +580,17 @@ class WiFiTracker:
             table.add_column("Total Usage", justify="right")
             table.add_column("Last Seen", style="dim")
 
-            for net in sorted(networks, key=lambda x: x.get("last_seen") or "", reverse=True):
+            for net in sorted(
+                networks, key=lambda x: x.get("last_seen") or "", reverse=True
+            ):
                 total = net["total_rx"] + net["total_tx"]
                 gw = net.get("gateway_ip") or "N/A"
                 last = net.get("last_seen", "Unknown")
                 if isinstance(last, str) and len(last) > 16:
                     last = last[:16]
-                table.add_row(net["ssid"], gw, self.display_manager.format_bytes(total), last)
+                table.add_row(
+                    net["ssid"], gw, self.display_manager.format_bytes(total), last
+                )
 
             console.print(table)
         else:
@@ -591,7 +618,7 @@ class WiFiTracker:
             print("    wifi-tracker alert show")
             return
 
-        threshold_bytes = AlertManager.parse_threshold(args[0])
+        threshold_bytes = AlertManager.parse_size(args[0])
         if threshold_bytes is None:
             print(f"Invalid threshold: {args[0]}")
             return
@@ -605,7 +632,9 @@ class WiFiTracker:
             threshold_bytes=threshold_bytes,
             window_hours=window_hours,
         )
-        print(f"Alert set: {self.display_manager.format_bytes(threshold_bytes)} in {AlertManager.format_window(window_hours)}")
+        print(
+            f"Alert set: {self.display_manager.format_bytes(threshold_bytes)} in {AlertManager.format_window(window_hours)}"
+        )
 
     def _cleanup(self):
         """Cleanup resources"""
@@ -616,7 +645,6 @@ class WiFiTracker:
     def _log_info(self, message: str) -> None:
         """Log info message to log file."""
         self.process_manager._log_info(message)
-        notifier.send_notification("WiFi Tracker", "WiFi Tracker stopped", Urgency.LOW)
 
 
 def main():
@@ -694,36 +722,51 @@ def main():
     subparsers.add_parser("daemon", aliases=["d"], help="Start background monitoring")
     subparsers.add_parser("watch", aliases=["w"], help="Live interactive dashboard")
 
-    status_p = subparsers.add_parser("status", aliases=["s"], help="Show usage statistics")
+    status_p = subparsers.add_parser(
+        "status", aliases=["s"], help="Show usage statistics"
+    )
     status_p.add_argument("--all", action="store_true", help="Show all networks")
     status_p.add_argument("--from-date", help="Start date (YYYY-MM-DD)")
     status_p.add_argument("--to-date", help="End date (YYYY-MM-DD)")
-    status_p.add_argument("--range", dest="range_str", default="24h",
-                          choices=["1h", "24h", "7d", "30d", "12m"],
-                          help="Time range (default: 24h)")
+    status_p.add_argument(
+        "--range",
+        dest="range_str",
+        default="24h",
+        choices=["1h", "24h", "7d", "30d", "12m"],
+        help="Time range (default: 24h)",
+    )
 
-    today_p = subparsers.add_parser("today", aliases=["t"], help="Quick one-line status")
-    today_p.add_argument("--range", dest="range_str", default="24h",
-                         choices=["1h", "24h", "7d", "30d", "12m"],
-                         help="Time range (default: 24h)")
+    today_p = subparsers.add_parser(
+        "today", aliases=["t"], help="Quick one-line status"
+    )
+    today_p.add_argument(
+        "--range",
+        dest="range_str",
+        default="24h",
+        choices=["1h", "24h", "7d", "30d", "12m"],
+        help="Time range (default: 24h)",
+    )
 
     graph_p = subparsers.add_parser("graph", aliases=["g"], help="ASCII usage graph")
     graph_p.add_argument("ssid", nargs="?", help="Network SSID (omit for current)")
-    graph_p.add_argument("--range", dest="range_str", default="24h",
-                         choices=["1h", "24h", "7d", "30d", "12m"],
-                         help="Time range (default: 24h)")
+    graph_p.add_argument(
+        "--range",
+        dest="range_str",
+        default="24h",
+        choices=["1h", "24h", "7d", "30d", "12m"],
+        help="Time range (default: 24h)",
+    )
 
-    top_apps_p = subparsers.add_parser("top-apps", help="Show apps using the network")
-    top_apps_p.add_argument("--range", dest="range_str", default="24h",
-                            choices=["1h", "24h", "7d", "30d", "12m"],
-                            help="Time range (default: 24h)")
+    subparsers.add_parser("top-apps", help="Show apps using the network")
     subparsers.add_parser("networks", help="Show saved networks")
 
     # ── Limits & Alerts ─────────────────────────────────────────
     limit_p = subparsers.add_parser("limit", help="Set data limit")
     limit_p.add_argument("ssid", help="Network SSID")
     limit_p.add_argument("size", help="Limit size (e.g. 1GB, 500MB)")
-    limit_p.add_argument("interval", choices=["daily", "weekly", "monthly"], help="Limit interval")
+    limit_p.add_argument(
+        "interval", choices=["daily", "weekly", "monthly"], help="Limit interval"
+    )
 
     rm_limit_p = subparsers.add_parser("remove-limit", help="Remove a data limit")
     rm_limit_p.add_argument("ssid", help="Network SSID")
@@ -733,29 +776,43 @@ def main():
     usage_p.add_argument("date", help="Start date (YYYY-MM-DD or relative like 2weeks)")
 
     alert_p = subparsers.add_parser("alert", help="Configure high-usage alerts")
-    alert_p.add_argument("args", nargs="*", help="show | <threshold> <window> (e.g. 2GB 1h)")
+    alert_p.add_argument(
+        "args", nargs="*", help="show | <threshold> <window> (e.g. 2GB 1h)"
+    )
 
     # ── Security ────────────────────────────────────────────────
-    trust_gw_p = subparsers.add_parser("trust-gateway", help="Trust a gateway (MITM protection)")
+    trust_gw_p = subparsers.add_parser(
+        "trust-gateway", help="Trust a gateway (MITM protection)"
+    )
     trust_gw_p.add_argument("ssid", help="Network SSID")
     trust_gw_p.add_argument("gateway_ip", help="Gateway IP address")
     trust_gw_p.add_argument("--mac", help="Gateway MAC address (optional)")
 
-    trusted_gw_p = subparsers.add_parser("trusted-gateways", help="List trusted gateways")
+    trusted_gw_p = subparsers.add_parser(
+        "trusted-gateways", help="List trusted gateways"
+    )
     trusted_gw_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
 
-    mark_safe_p = subparsers.add_parser("mark-safe", help="Mark app as safe (won't alert/kill)")
+    mark_safe_p = subparsers.add_parser(
+        "mark-safe", help="Mark app as safe (won't alert/kill)"
+    )
     mark_safe_p.add_argument("ssid", help="Network SSID")
     mark_safe_p.add_argument("app_name", help="Process/command name")
-    mark_safe_p.add_argument("--always", action="store_true", help="Always safe (not just once)")
+    mark_safe_p.add_argument(
+        "--always", action="store_true", help="Always safe (not just once)"
+    )
 
     safe_apps_p = subparsers.add_parser("safe-apps", help="List trusted apps")
     safe_apps_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
 
-    kill_app_p = subparsers.add_parser("kill-app", help="Kill app or auto-kill on limit")
+    kill_app_p = subparsers.add_parser(
+        "kill-app", help="Kill app or auto-kill on limit"
+    )
     kill_app_p.add_argument("ssid", help="Network SSID")
     kill_app_p.add_argument("app_name", help="Process/command name")
-    kill_app_p.add_argument("--always", action="store_true", help="Always kill when exceeding limit")
+    kill_app_p.add_argument(
+        "--always", action="store_true", help="Always kill when exceeding limit"
+    )
 
     kill_list_p = subparsers.add_parser("kill-list", help="List auto-kill apps")
     kill_list_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
@@ -764,7 +821,9 @@ def main():
     subparsers.add_parser("stop", help="Stop the daemon")
 
     cleanup_p = subparsers.add_parser("cleanup", help="Clean old data")
-    cleanup_p.add_argument("days", nargs="?", type=int, default=90, help="Days to keep (default: 90)")
+    cleanup_p.add_argument(
+        "days", nargs="?", type=int, default=90, help="Days to keep (default: 90)"
+    )
 
     subparsers.add_parser("install-service", help="Install systemd service")
     subparsers.add_parser("remove-service", help="Remove systemd service")
@@ -783,6 +842,10 @@ def main():
         command = "watch"
     elif command in ("s",):
         command = "status"
+    elif command in ("t",):
+        command = "today"
+    elif command in ("g",):
+        command = "graph"
 
     # Create tracker instance
     tracker = WiFiTracker(args.interface, args.interval)
@@ -802,14 +865,19 @@ def main():
             if args.from_date and not args.to_date:
                 custom_end_date = datetime.now()
             if not custom_start_date and not custom_end_date:
-                range_str = getattr(args, 'range_str', '24h')
+                range_str = getattr(args, "range_str", "24h")
                 range_days = {"1h": 0, "24h": 1, "7d": 7, "30d": 30, "12m": 365}
                 days = range_days.get(range_str, 1)
                 if days > 0:
                     custom_start_date = datetime.now() - timedelta(days=days)
                     custom_end_date = datetime.now()
             if args.all:
-                tracker.status_all_mode()
+                tracker.display_manager.print_detailed_stats(
+                    tracker.data_manager.usage_data,
+                    tracker.data_manager.limits_data,
+                    custom_start_date=custom_start_date,
+                    custom_end_date=custom_end_date,
+                )
             else:
                 tracker.status_mode(custom_start_date, custom_end_date)
         elif command == "top-apps":
@@ -844,11 +912,19 @@ def main():
             else:
                 print(f"No running processes found for '{args.app_name}'")
             if args.always:
-                tracker.data_manager.mark_app_kill(args.ssid, args.app_name, always=True)
-                print(f"✓ Will auto-kill '{args.app_name}' when exceeding limit on {args.ssid}")
+                tracker.data_manager.mark_app_kill(
+                    args.ssid, args.app_name, always=True
+                )
+                print(
+                    f"✓ Will auto-kill '{args.app_name}' when exceeding limit on {args.ssid}"
+                )
             else:
-                tracker.data_manager.mark_app_kill(args.ssid, args.app_name, always=False)
-                print(f"✓ Will kill '{args.app_name}' once when exceeding limit on {args.ssid}")
+                tracker.data_manager.mark_app_kill(
+                    args.ssid, args.app_name, always=False
+                )
+                print(
+                    f"✓ Will kill '{args.app_name}' once when exceeding limit on {args.ssid}"
+                )
         elif command == "trust-gateway":
             tracker.data_manager.add_known_gateway(
                 args.ssid, args.gateway_ip, args.mac or ""
@@ -903,19 +979,28 @@ def main():
                         mac = gw.get("mac") or ""
                         ip = gw.get("ip", "")
                         if vendor:
-                            print(f"  {ip} ({mac}) [{vendor}]" if mac else f"  {ip} [{vendor}]")
+                            print(
+                                f"  {ip} ({mac}) [{vendor}]"
+                                if mac
+                                else f"  {ip} [{vendor}]"
+                            )
                         else:
                             print(f"  {ip} ({mac})" if mac else f"  {ip}")
             if not found:
                 print("No trusted gateways configured.")
-        elif command in ("today", "t"):
+        elif command == "today":
             measurement = tracker.monitor.get_measurement()
             current_ssid = measurement.get("ssid") if measurement else None
             if not current_ssid:
                 print("Not connected to any network.")
             else:
-                range_str = getattr(args, 'range_str', '24h')
-                range_usage = sum(v for _, v in tracker.data_manager.get_usage_for_graph(current_ssid, range_str))
+                range_str = getattr(args, "range_str", "24h")
+                range_usage = sum(
+                    v
+                    for _, v in tracker.data_manager.get_usage_for_graph(
+                        current_ssid, range_str
+                    )
+                )
                 ssid_data = tracker.data_manager.usage_data.get(current_ssid, {})
                 total = ssid_data.get("total_rx", 0) + ssid_data.get("total_tx", 0)
                 rate_up = measurement.get("tx_rate", 0)
@@ -929,11 +1014,26 @@ def main():
                         top_app = apps[0].get("name", "")
                 except Exception:
                     pass
+                range_labels = {
+                    "1h": "Last 1h",
+                    "24h": "Today",
+                    "7d": "Last 7d",
+                    "30d": "Last 30d",
+                    "12m": "Last 12m",
+                }
+                range_label = range_labels.get(range_str, "Today")
                 tracker.display_manager.print_quick_status(
-                    current_ssid, range_usage, total, rate_up, rate_down, limit, top_app
+                    current_ssid,
+                    range_usage,
+                    total,
+                    rate_up,
+                    rate_down,
+                    limit,
+                    top_app,
+                    range_label,
                 )
-        elif command in ("graph", "g"):
-            target_ssid = getattr(args, 'ssid', None)
+        elif command == "graph":
+            target_ssid = getattr(args, "ssid", None)
             if not target_ssid:
                 measurement = tracker.monitor.get_measurement()
                 target_ssid = measurement.get("ssid") if measurement else None
@@ -941,9 +1041,13 @@ def main():
                 print("Not connected to any network. Usage: wifi-tracker graph SSID")
             else:
                 tracker.data_manager.load_data()
-                range_str = getattr(args, 'range_str', '24h')
-                hourly = tracker.data_manager.get_usage_for_graph(target_ssid, range_str)
-                tracker.display_manager.print_ascii_graph(hourly, target_ssid, range_label=range_str)
+                range_str = getattr(args, "range_str", "24h")
+                hourly = tracker.data_manager.get_usage_for_graph(
+                    target_ssid, range_str
+                )
+                tracker.display_manager.print_ascii_graph(
+                    hourly, target_ssid, range_label=range_str
+                )
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
@@ -955,7 +1059,6 @@ def main():
 
 def _handle_completion(shell: str, comp_word: str) -> None:
     """Output shell completion suggestions based on context."""
-    import os
     all_words = os.environ.get("COMP_WORDS", comp_word).split()
     # Filter out everything except the actual command words
     words = []
@@ -978,6 +1081,7 @@ def _handle_completion(shell: str, comp_word: str) -> None:
     networks = []
     try:
         from .data_manager import DataManager
+
         dm = DataManager()
         networks = [ssid for ssid in dm.usage_data if not ssid.startswith("_")]
     except Exception:
@@ -996,16 +1100,39 @@ def _handle_completion(shell: str, comp_word: str) -> None:
     if argc == 0:
         # No subcommand: show commands only
         all_cmds = [
-            "daemon", "watch", "status", "today", "graph", "top-apps", "networks",
-            "limit", "remove-limit", "usage-from", "alert",
-            "trust-gateway", "trusted-gateways", "mark-safe", "safe-apps",
-            "kill-app", "kill-list",
-            "stop", "cleanup", "install-service", "remove-service",
+            "daemon",
+            "watch",
+            "status",
+            "today",
+            "graph",
+            "top-apps",
+            "networks",
+            "limit",
+            "remove-limit",
+            "usage-from",
+            "alert",
+            "trust-gateway",
+            "trusted-gateways",
+            "mark-safe",
+            "safe-apps",
+            "kill-app",
+            "kill-list",
+            "stop",
+            "cleanup",
+            "install-service",
+            "remove-service",
         ]
         for c in all_cmds:
             if c.startswith(cur):
                 suggestions.append(c)
-    elif argc == 1 and cmd in ("limit", "remove-limit", "usage-from", "mark-safe", "kill-app", "trust-gateway"):
+    elif argc == 1 and cmd in (
+        "limit",
+        "remove-limit",
+        "usage-from",
+        "mark-safe",
+        "kill-app",
+        "trust-gateway",
+    ):
         # SSID arg
         for net in networks:
             if net.lower().startswith(cur):
@@ -1019,6 +1146,7 @@ def _handle_completion(shell: str, comp_word: str) -> None:
         # App name arg
         try:
             from .process_manager import ProcessManager
+
             pm = ProcessManager("wifi-tracker")
             apps = pm.get_top_network_apps(limit=30)
             for app in apps:
@@ -1041,11 +1169,17 @@ def _handle_completion(shell: str, comp_word: str) -> None:
         for hint in ["show", "1GB", "2GB", "5GB"]:
             if hint.lower().startswith(cur):
                 suggestions.append(hint)
-    elif argc == 1 and cmd in ("today", "top-apps"):
+    elif argc == 1 and cmd in ("today",):
         for hint in ["--range"]:
             if hint.startswith(cur):
                 suggestions.append(hint)
-    elif argc == 1 and cmd in ("stop", "install-service", "remove-service", "networks"):
+    elif argc == 1 and cmd in (
+        "stop",
+        "install-service",
+        "remove-service",
+        "networks",
+        "top-apps",
+    ):
         pass
     elif argc == 1 and cmd == "status":
         for hint in ["--all", "--from-date", "--to-date", "--range"]:
@@ -1063,8 +1197,13 @@ def _handle_completion(shell: str, comp_word: str) -> None:
         for hint in ["1h", "24h", "7d", "30d", "12m"]:
             if hint.startswith(cur):
                 suggestions.append(hint)
+    elif prev in ("--from-date", "--to-date"):
+        for hint in ["today", "yesterday"]:
+            if hint.startswith(cur):
+                suggestions.append(hint)
     elif prev in ("--interface", "-i"):
         import glob
+
         for iface in glob.glob("/sys/class/net/*"):
             name = iface.split("/")[-1]
             if name.startswith(cur):
@@ -1072,11 +1211,27 @@ def _handle_completion(shell: str, comp_word: str) -> None:
     else:
         # Fallback: show commands
         all_cmds = [
-            "daemon", "watch", "status", "today", "graph", "top-apps", "networks",
-            "limit", "remove-limit", "usage-from", "alert",
-            "trust-gateway", "trusted-gateways", "mark-safe", "safe-apps",
-            "kill-app", "kill-list",
-            "stop", "cleanup", "install-service", "remove-service",
+            "daemon",
+            "watch",
+            "status",
+            "today",
+            "graph",
+            "top-apps",
+            "networks",
+            "limit",
+            "remove-limit",
+            "usage-from",
+            "alert",
+            "trust-gateway",
+            "trusted-gateways",
+            "mark-safe",
+            "safe-apps",
+            "kill-app",
+            "kill-list",
+            "stop",
+            "cleanup",
+            "install-service",
+            "remove-service",
         ]
         for c in all_cmds:
             if c.startswith(cur):
@@ -1094,6 +1249,7 @@ def _handle_completion(shell: str, comp_word: str) -> None:
         # Columnar output for bash/zsh
         try:
             import shutil
+
             term_width = shutil.get_terminal_size().columns
         except Exception:
             term_width = 80
@@ -1104,7 +1260,7 @@ def _handle_completion(shell: str, comp_word: str) -> None:
 
         lines = []
         for i in range(0, len(result), cols):
-            row = result[i:i + cols]
+            row = result[i : i + cols]
             lines.append("".join(s.ljust(col_width) for s in row))
 
         print("\n".join(lines))

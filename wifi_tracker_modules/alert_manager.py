@@ -110,37 +110,6 @@ class AlertManager:
             return None
 
     @staticmethod
-    def parse_threshold(threshold_str: str) -> Optional[int]:
-        """Parse a threshold string like '5GB', '500M', '1T' into bytes.
-
-        Accepts: TB/T, GB/G, MB/M, KB/K, B, or raw bytes.
-        """
-        t = threshold_str.upper().strip()
-        multiplier = 1
-        if t.endswith("TB") or t.endswith("T"):
-            num = t[:-2] if t.endswith("TB") else t[:-1]
-            multiplier = 1024**4
-            t = num
-        elif t.endswith("GB") or t.endswith("G"):
-            num = t[:-2] if t.endswith("GB") else t[:-1]
-            multiplier = 1024**3
-            t = num
-        elif t.endswith("MB") or t.endswith("M"):
-            num = t[:-2] if t.endswith("MB") else t[:-1]
-            multiplier = 1024**2
-            t = num
-        elif t.endswith("KB") or t.endswith("K"):
-            num = t[:-2] if t.endswith("KB") else t[:-1]
-            multiplier = 1024
-            t = num
-        elif t.endswith("B"):
-            t = t[:-1]
-        try:
-            return int(float(t) * multiplier)
-        except ValueError:
-            return None
-
-    @staticmethod
     def parse_window(window_str: str) -> Optional[float]:
         """Parse a window string like '1h', '30m', '2d' into hours.
 

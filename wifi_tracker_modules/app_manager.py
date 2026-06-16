@@ -36,7 +36,9 @@ class AppManager:
         except Exception:
             pass
 
-    def _handle_high_usage_action(self, ssid: str, app_name: str, size: str, notified: Set[str]) -> None:
+    def _handle_high_usage_action(
+        self, ssid: str, app_name: str, size: str, notified: Set[str]
+    ) -> None:
         """Handle high-usage notification response in a background thread."""
         try:
             window_msg = AlertManager.format_window(
@@ -46,20 +48,30 @@ class AppManager:
 
             if choice == "safe_once":
                 self.data_manager.mark_app_safe(ssid, app_name, always=False)
-                self.process_manager._log_info(f"User marked {app_name} as safe (once) on {ssid}")
+                self.process_manager._log_info(
+                    f"User marked {app_name} as safe (once) on {ssid}"
+                )
             elif choice == "safe_always":
                 self.data_manager.mark_app_safe(ssid, app_name, always=True)
-                self.process_manager._log_info(f"User marked {app_name} as safe (always) on {ssid}")
+                self.process_manager._log_info(
+                    f"User marked {app_name} as safe (always) on {ssid}"
+                )
             elif choice == "kill_once":
                 killed = self.data_manager.kill_app(app_name)
                 self.data_manager.mark_app_kill(ssid, app_name, always=False)
-                self.process_manager._log_info(f"User killed {app_name} ({killed} procs) on {ssid}")
+                self.process_manager._log_info(
+                    f"User killed {app_name} ({killed} procs) on {ssid}"
+                )
             elif choice == "kill_always":
                 killed = self.data_manager.kill_app(app_name)
                 self.data_manager.mark_app_kill(ssid, app_name, always=True)
-                self.process_manager._log_info(f"User killed {app_name} ({killed} procs, always) on {ssid}")
+                self.process_manager._log_info(
+                    f"User killed {app_name} ({killed} procs, always) on {ssid}"
+                )
             else:
-                self.process_manager._log_info(f"High usage alert for {app_name} ({size}) on {ssid} - ignored")
+                self.process_manager._log_info(
+                    f"High usage alert for {app_name} ({size}) on {ssid} - ignored"
+                )
 
             notified.add(app_name)
         except Exception as e:

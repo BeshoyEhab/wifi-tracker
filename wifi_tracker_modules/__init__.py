@@ -12,9 +12,4 @@ from .process_manager import ProcessManager
 from .data_manager import DataManager
 from .display_manager import DisplayManager
 
-__all__ = [
-    'NetworkMonitor',
-    'ProcessManager', 
-    'DataManager',
-    'DisplayManager'
-]
+__all__ = ["NetworkMonitor", "ProcessManager", "DataManager", "DisplayManager"]

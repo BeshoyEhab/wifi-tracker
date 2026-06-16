@@ -424,7 +424,9 @@ class DisplayManager:
                 name = app.get("name", "unknown")[:20]
                 conns = str(app.get("connections", 0))
                 print(f"{pid:>6}  {user:<12} {name:<20} {conns:>5}")
-            print("\n  Note: Bytes shown are total process I/O (disk+network), not network-only.")
+            print(
+                "\n  Note: Bytes shown are total process I/O (disk+network), not network-only."
+            )
             return
 
         table = Table(title="Top Network Applications", box=ROUNDED, expand=True)
@@ -445,7 +447,9 @@ class DisplayManager:
             table.add_row(pid, user, name, conns, total)
 
         self.console.print(table)
-        self.console.print("  [dim]Note: I/O Total is process-wide (disk+network), not network-only. Conns = active network connections.[/dim]")
+        self.console.print(
+            "  [dim]Note: I/O Total is process-wide (disk+network), not network-only. Conns = active network connections.[/dim]"
+        )
 
     def print_detailed_stats(
         self,
@@ -546,7 +550,9 @@ class DisplayManager:
             usage_data, limits_data, current_ssid, current_measurement
         )
 
-    def print_ascii_graph(self, hourly_data: list, ssid: str, width: int = 50, range_label: str = "24h") -> None:
+    def print_ascii_graph(
+        self, hourly_data: list, ssid: str, width: int = 50, range_label: str = "24h"
+    ) -> None:
         """Print a simple ASCII bar graph of usage.
 
         Args:
@@ -572,7 +578,7 @@ class DisplayManager:
         col_label = "Time" if range_label in ("1h", "24h") else "Date"
         lines = [f"\n  Usage graph for {ssid} ({range_desc}):"]
         lines.append(f"  {col_label:<10} {'Used':<10} Graph")
-        lines.append(f"  {'─'*10} {'─'*10} {'─'*width}")
+        lines.append(f"  {'─' * 10} {'─' * 10} {'─' * width}")
 
         for label, bytes_used in hourly_data:
             bar_len = int((bytes_used / max_val) * width) if max_val > 0 else 0
@@ -585,9 +591,17 @@ class DisplayManager:
         else:
             print("\n".join(lines))
 
-    def print_quick_status(self, ssid: str, today_usage: int, total_usage: int,
-                           rate_up: float, rate_down: float,
-                           limit: int = 0, top_app: str = "") -> None:
+    def print_quick_status(
+        self,
+        ssid: str,
+        today_usage: int,
+        total_usage: int,
+        rate_up: float,
+        rate_down: float,
+        limit: int = 0,
+        top_app: str = "",
+        range_label: str = "Today",
+    ) -> None:
         """Print a compact one-line status."""
         size_today = self.format_bytes(today_usage)
         size_total = self.format_bytes(total_usage)
@@ -595,7 +609,7 @@ class DisplayManager:
         down = self.format_rate(rate_down)
 
         parts = [f"  {ssid}"]
-        parts.append(f"Today: {size_today}")
+        parts.append(f"{range_label}: {size_today}")
         parts.append(f"Total: {size_total}")
         parts.append(f"↑{up} ↓{down}")
         if limit > 0:

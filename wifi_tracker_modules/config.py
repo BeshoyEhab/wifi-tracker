@@ -6,11 +6,12 @@ Handles path configuration and XDG Base Directory specification compliance.
 import os
 from pathlib import Path
 
+
 class Config:
     """Central configuration for file paths and settings"""
-    
+
     APP_NAME = "wifi-tracker"
-    
+
     @staticmethod
     def get_data_dir() -> Path:
         """
@@ -22,7 +23,7 @@ class Config:
             base = Path(xdg_data)
         else:
             base = Path.home() / ".local" / "share"
-        
+
         path = base / Config.APP_NAME
         path.mkdir(parents=True, exist_ok=True)
         return path
@@ -38,11 +39,11 @@ class Config:
             base = Path(xdg_cache)
         else:
             base = Path.home() / ".cache"
-            
+
         path = base / Config.APP_NAME
         path.mkdir(parents=True, exist_ok=True)
         return path
-        
+
     @staticmethod
     def get_config_dir() -> Path:
         """
@@ -54,23 +55,23 @@ class Config:
             base = Path(xdg_config)
         else:
             base = Path.home() / ".config"
-            
+
         path = base / Config.APP_NAME
         path.mkdir(parents=True, exist_ok=True)
         return path
 
     # Specialized paths
-    
+
     @classmethod
     def get_data_file(cls) -> Path:
         """Path to the main usage data JSON file"""
         return cls.get_data_dir() / "wifi_usage.json"
-        
+
     @classmethod
     def get_limits_file(cls) -> Path:
         """Path to the limits data JSON file"""
         return cls.get_data_dir() / "wifi_limits.json"
-        
+
     @classmethod
     def get_pid_file(cls) -> Path:
         """Path to the daemon PID file"""

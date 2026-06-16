@@ -48,7 +48,7 @@ class DataManager:
         self._metadata = {}  # Track cleanup and other metadata
         self._alert_settings = {
             "threshold_bytes": 5 * 1024**3,  # 5GB default
-            "window_hours": 1,               # 1 hour default
+            "window_hours": 1,  # 1 hour default
         }
 
         # Load existing data
@@ -195,7 +195,9 @@ class DataManager:
         if "window_hours" in saved:
             self._alert_settings["window_hours"] = saved["window_hours"]
 
-    def set_alert_settings(self, threshold_bytes: Optional[int] = None, window_hours: Optional[int] = None) -> None:
+    def set_alert_settings(
+        self, threshold_bytes: Optional[int] = None, window_hours: Optional[int] = None
+    ) -> None:
         """
         Configure high-usage alert threshold and time window.
 
@@ -222,7 +224,9 @@ class DataManager:
             return []
         return self.usage_data[ssid].get("known_gateways", [])
 
-    def is_known_gateway(self, ssid: str, gateway_ip: str, gateway_mac: Optional[str] = None) -> bool:
+    def is_known_gateway(
+        self, ssid: str, gateway_ip: str, gateway_mac: Optional[str] = None
+    ) -> bool:
         """Check if a gateway is already marked as safe."""
         known = self.get_known_gateways(ssid)
         for gw in known:
@@ -232,8 +236,13 @@ class DataManager:
                 return True
         return False
 
-    def add_known_gateway(self, ssid: str, gateway_ip: str, gateway_mac: Optional[str] = None,
-                          vendor: Optional[str] = None) -> None:
+    def add_known_gateway(
+        self,
+        ssid: str,
+        gateway_ip: str,
+        gateway_mac: Optional[str] = None,
+        vendor: Optional[str] = None,
+    ) -> None:
         """Mark a gateway as safe for an SSID."""
         if ssid not in self.usage_data:
             self.usage_data[ssid] = {}
@@ -242,12 +251,14 @@ class DataManager:
         for gw in gateways:
             if gw.get("ip") == gateway_ip:
                 return
-        gateways.append({
-            "ip": gateway_ip,
-            "mac": gateway_mac,
-            "vendor": vendor,
-            "added": datetime.now().isoformat(),
-        })
+        gateways.append(
+            {
+                "ip": gateway_ip,
+                "mac": gateway_mac,
+                "vendor": vendor,
+                "added": datetime.now().isoformat(),
+            }
+        )
         self.save_data()
 
     def remove_known_gateway(self, ssid: str, gateway_ip: str) -> bool:
@@ -347,10 +358,11 @@ class DataManager:
     def kill_app(self, app_name: str) -> int:
         """Kill all processes with the given name. Returns number killed."""
         import psutil as _psutil
+
         killed = 0
-        for proc in _psutil.process_iter(['pid', 'name']):
+        for proc in _psutil.process_iter(["pid", "name"]):
             try:
-                if proc.info['name'] == app_name:
+                if proc.info["name"] == app_name:
                     proc.kill()
                     killed += 1
             except (_psutil.NoSuchProcess, _psutil.AccessDenied):
@@ -422,6 +434,7 @@ class DataManager:
                         "connection_duration": daily_data.get("connection_duration", 0),
                         "data_points": daily_data.get("data_points", 0),
                         "hourly": daily_data.get("hourly", {}),
+                        "minutely": daily_data.get("minutely", {}),
                     }
 
             validated_ssid["daily"] = validated_daily
@@ -621,8 +634,13 @@ class DataManager:
         return session_rx, session_tx
 
     def update_app_usage(
-        self, ssid: str, app_name: str, bytes_sent: int, bytes_recv: int,
-        timestamp: Optional[datetime] = None, pid: int = 0
+        self,
+        ssid: str,
+        app_name: str,
+        bytes_sent: int,
+        bytes_recv: int,
+        timestamp: Optional[datetime] = None,
+        pid: int = 0,
     ) -> None:
         """
         Track per-app network usage with a rolling 1-hour window.
@@ -682,13 +700,17 @@ class DataManager:
 
         # Only add entry if there was actual usage
         if delta_sent > 0 or delta_recv > 0:
-            entries.append({
-                "ts": timestamp.isoformat(),
-                "sent": delta_sent,
-                "recv": delta_recv,
-            })
+            entries.append(
+                {
+                    "ts": timestamp.isoformat(),
+                    "sent": delta_sent,
+                    "recv": delta_recv,
+                }
+            )
 
-    def get_high_usage_apps(self, ssid: str, threshold_bytes: int = 5 * 1024**3, window_hours: int = 1) -> List[Dict[str, Any]]:
+    def get_high_usage_apps(
+        self, ssid: str, threshold_bytes: int = 5 * 1024**3, window_hours: int = 1
+    ) -> List[Dict[str, Any]]:
         """
         Get apps that exceed a data usage threshold within a time window.
 
@@ -720,12 +742,14 @@ class DataManager:
 
             total = total_sent + total_recv
             if total >= threshold_bytes:
-                high_apps.append({
-                    "name": app_name,
-                    "bytes_sent": total_sent,
-                    "bytes_recv": total_recv,
-                    "total_bytes": total,
-                })
+                high_apps.append(
+                    {
+                        "name": app_name,
+                        "bytes_sent": total_sent,
+                        "bytes_recv": total_recv,
+                        "total_bytes": total,
+                    }
+                )
 
         return sorted(high_apps, key=lambda x: x["total_bytes"], reverse=True)
 
@@ -768,10 +792,7 @@ class DataManager:
                 continue
 
             entries = data.get("entries", [])
-            filtered = [
-                e for e in entries
-                if start_iso <= e.get("ts", "") <= end_iso
-            ]
+            filtered = [e for e in entries if start_iso <= e.get("ts", "") <= end_iso]
 
             total_sent = sum(e.get("sent", 0) for e in filtered)
             total_recv = sum(e.get("recv", 0) for e in filtered)
@@ -785,9 +806,7 @@ class DataManager:
 
         return result
 
-    def get_usage_for_graph(
-        self, ssid: str, range_str: str = "24h"
-    ) -> list:
+    def get_usage_for_graph(self, ssid: str, range_str: str = "24h") -> list:
         """
         Get usage data for the graph at the appropriate granularity.
 
@@ -877,13 +896,15 @@ class DataManager:
         for ssid, data in self.usage_data.items():
             if ssid.startswith("_"):
                 continue
-            networks.append({
-                "ssid": ssid,
-                "gateway_ip": data.get("gateway_ip"),
-                "total_rx": data.get("total_rx", 0),
-                "total_tx": data.get("total_tx", 0),
-                "last_seen": data.get("last_seen"),
-            })
+            networks.append(
+                {
+                    "ssid": ssid,
+                    "gateway_ip": data.get("gateway_ip"),
+                    "total_rx": data.get("total_rx", 0),
+                    "total_tx": data.get("total_tx", 0),
+                    "last_seen": data.get("last_seen"),
+                }
+            )
         return networks
 
     def get_usage_summary(self, ssid: str = "") -> Dict[str, Any]:
