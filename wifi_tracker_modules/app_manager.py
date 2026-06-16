@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Set
 
 from .notification_manager import notifier, Urgency
+from .alert_manager import AlertManager
 
 
 class AppManager:
@@ -78,7 +79,7 @@ class AppManager:
                     continue
 
                 size = self.display_manager.format_bytes(total_bytes)
-                window_msg = f"{window}h" if window >= 1 else f"{round(window * 60)}m"
+                window_msg = AlertManager.format_window(window)
 
                 choice = notifier.ask_high_usage_action(ssid, app_name, size, window_msg)
 

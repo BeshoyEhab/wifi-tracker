@@ -84,37 +84,55 @@ class AlertManager:
 
     @staticmethod
     def parse_size(size_str: str) -> Optional[int]:
-        """Parse a size string like '1GB', '500MB' into bytes."""
-        size_upper = size_str.upper()
+        """Parse a size string like '1GB', '500M', '1T' into bytes.
+
+        Accepts: TB/T, GB/G, MB/M, KB/K, B, or raw bytes.
+        """
+        size_upper = size_str.upper().strip()
         try:
-            if size_upper.endswith("GB"):
-                return int(float(size_upper[:-2]) * 1024**3)
-            elif size_upper.endswith("MB"):
-                return int(float(size_upper[:-2]) * 1024**2)
-            elif size_upper.endswith("KB"):
-                return int(float(size_upper[:-2]) * 1024)
+            if size_upper.endswith("TB") or size_upper.endswith("T"):
+                num = size_upper[:-2] if size_upper.endswith("TB") else size_upper[:-1]
+                return int(float(num) * 1024**4)
+            elif size_upper.endswith("GB") or size_upper.endswith("G"):
+                num = size_upper[:-2] if size_upper.endswith("GB") else size_upper[:-1]
+                return int(float(num) * 1024**3)
+            elif size_upper.endswith("MB") or size_upper.endswith("M"):
+                num = size_upper[:-2] if size_upper.endswith("MB") else size_upper[:-1]
+                return int(float(num) * 1024**2)
+            elif size_upper.endswith("KB") or size_upper.endswith("K"):
+                num = size_upper[:-2] if size_upper.endswith("KB") else size_upper[:-1]
+                return int(float(num) * 1024)
+            elif size_upper.endswith("B"):
+                return int(float(size_upper[:-1]) * 1)
             else:
-                return int(size_str)
+                return int(float(size_str))
         except ValueError:
             return None
 
     @staticmethod
     def parse_threshold(threshold_str: str) -> Optional[int]:
-        """Parse a threshold string like '5GB', '500MB' into bytes."""
-        t = threshold_str.upper()
+        """Parse a threshold string like '5GB', '500M', '1T' into bytes.
+
+        Accepts: TB/T, GB/G, MB/M, KB/K, B, or raw bytes.
+        """
+        t = threshold_str.upper().strip()
         multiplier = 1
-        if t.endswith("TB"):
+        if t.endswith("TB") or t.endswith("T"):
+            num = t[:-2] if t.endswith("TB") else t[:-1]
             multiplier = 1024**4
-            t = t[:-2]
-        elif t.endswith("GB"):
+            t = num
+        elif t.endswith("GB") or t.endswith("G"):
+            num = t[:-2] if t.endswith("GB") else t[:-1]
             multiplier = 1024**3
-            t = t[:-2]
-        elif t.endswith("MB"):
+            t = num
+        elif t.endswith("MB") or t.endswith("M"):
+            num = t[:-2] if t.endswith("MB") else t[:-1]
             multiplier = 1024**2
-            t = t[:-2]
-        elif t.endswith("KB"):
+            t = num
+        elif t.endswith("KB") or t.endswith("K"):
+            num = t[:-2] if t.endswith("KB") else t[:-1]
             multiplier = 1024
-            t = t[:-2]
+            t = num
         elif t.endswith("B"):
             t = t[:-1]
         try:
@@ -124,10 +142,15 @@ class AlertManager:
 
     @staticmethod
     def parse_window(window_str: str) -> Optional[float]:
-        """Parse a window string like '1h', '30m' into hours."""
-        w = window_str.lower()
+        """Parse a window string like '1h', '30m', '2d' into hours.
+
+        Accepts: d (days), h (hours), m (minutes), or raw hours.
+        """
+        w = window_str.lower().strip()
         try:
-            if w.endswith("h"):
+            if w.endswith("d"):
+                return float(w[:-1]) * 24
+            elif w.endswith("h"):
                 return float(w[:-1])
             elif w.endswith("m"):
                 return float(w[:-1]) / 60
@@ -135,3 +158,33 @@ class AlertManager:
                 return float(w)
         except ValueError:
             return None
+
+    @staticmethod
+    def format_window(hours: float) -> str:
+        """Format a time window in hours into a human-readable string.
+
+        - >= 24h: shows days and hours (e.g. '2d 6h')
+        - >= 1h: shows hours and minutes (e.g. '3h 30m')
+        - < 1h: shows minutes (e.g. '45m')
+        """
+        if hours >= 24:
+            days = int(hours // 24)
+            remaining_hours = hours % 24
+            if remaining_hours > 0 and remaining_hours != int(remaining_hours):
+                h = int(remaining_hours)
+                m = int((remaining_hours - h) * 60)
+                return f"{days}d {h}h {m}m"
+            elif remaining_hours > 0:
+                return f"{days}d {int(remaining_hours)}h"
+            else:
+                return f"{days}d"
+        elif hours >= 1:
+            h = int(hours)
+            m = int((hours - h) * 60)
+            if m > 0:
+                return f"{h}h {m}m"
+            else:
+                return f"{h}h"
+        else:
+            minutes = round(hours * 60)
+            return f"{minutes}m"

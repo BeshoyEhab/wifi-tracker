@@ -578,22 +578,17 @@ class WiFiTracker:
             settings = self.data_manager.get_alert_settings()
             threshold = settings["threshold_bytes"]
             window = settings["window_hours"]
-            if window >= 1 and window == int(window):
-                window_str = f"{int(window)} hour(s)"
-            elif window >= 1:
-                window_str = f"{window:.1f} hour(s)"
-            else:
-                minutes = round(window * 60)
-                window_str = f"{minutes} minute(s)"
             print(f"Alert threshold: {self.display_manager.format_bytes(threshold)}")
-            print(f"Time window: {window_str}")
+            print(f"Time window: {AlertManager.format_window(window)}")
             return
 
         if len(args) != 2:
-            print("Usage: --alert <threshold> <window>")
-            print("  Example: --alert 5GB 1h")
-            print("  Example: --alert 2GB 30m")
-            print("  Example: --alert show")
+            print("Usage: wifi-tracker alert <threshold> <window>")
+            print("  Examples:")
+            print("    wifi-tracker alert 5G 1h")
+            print("    wifi-tracker alert 500M 30m")
+            print("    wifi-tracker alert 2G 2d")
+            print("    wifi-tracker alert show")
             return
 
         threshold_bytes = AlertManager.parse_threshold(args[0])
@@ -610,7 +605,7 @@ class WiFiTracker:
             threshold_bytes=threshold_bytes,
             window_hours=window_hours,
         )
-        print(f"Alert set: {self.display_manager.format_bytes(threshold_bytes)} in {window_hours}h")
+        print(f"Alert set: {self.display_manager.format_bytes(threshold_bytes)} in {AlertManager.format_window(window_hours)}")
 
     def _cleanup(self):
         """Cleanup resources"""
