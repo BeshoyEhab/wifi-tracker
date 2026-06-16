@@ -115,28 +115,31 @@ pipx uninstall wifi-tracker
 
 ## Project Structure
 
-- `wifi-tracker`: Main executable script.
 - `wifi_tracker_modules/`:
   - `__init__.py`: Package initializer.
+  - `cli.py`: CLI argument parsing and main entry point.
+  - `config.py`: XDG-compliant path configuration.
   - `data_manager.py`: Handles data persistence and validation.
   - `network_monitor.py`: Monitors network interfaces and collects stats.
   - `process_manager.py`: Manages processes and daemon operations.
   - `display_manager.py`: Handles display formatting and output.
   - `notification_manager.py`: Handles system notifications.
+- `completions/`: Shell completions for bash, zsh, and fish.
+- `tests/`: Unit tests.
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.12+
 - Linux with wireless tools (`iwconfig`, `iwgetid`)
-- `psutil` and `rich` libraries.
-  - Recommended: `uv pip install psutil rich`
-  - Or: `pip install psutil rich`
+- `psutil` and `rich` libraries (installed automatically).
 
 ## Data Storage
 
-- Usage data is stored in `~/.cache/wifi_usage.json`.
-- Limits are stored in `~/.cache/wifi_limits.json`.
-- Logs are in `~/.cache/wifi-tracker_*.log`.
+Data follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/):
+
+- Usage data: `~/.local/share/wifi-tracker/wifi_usage.json`
+- Limits: `~/.local/share/wifi-tracker/wifi_limits.json`
+- Logs: `~/.cache/wifi-tracker/daemon.log`
 
 ## Contributing
 

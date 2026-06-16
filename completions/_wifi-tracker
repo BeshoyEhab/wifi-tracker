@@ -1,0 +1,18 @@
+#compdef wifi-tracker
+
+_wifi_tracker() {
+    local -a suggestions
+    local cur="${words[-1]}"
+
+    # Pass full command line as COMP_WORDS for context-aware completion
+    export COMP_WORDS="${words[*]}"
+    export COMP_CWORD=$((CURRENT - 1))
+
+    suggestions=("${(@f)$(wifi-tracker --complete zsh "$cur" 2>/dev/null)}")
+
+    if [[ ${#suggestions[@]} -gt 0 && -n "${suggestions[1]}" ]]; then
+        compadd -Q -V unsorted -a suggestions
+    fi
+}
+
+_wifi_tracker "$@"

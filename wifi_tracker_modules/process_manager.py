@@ -212,7 +212,7 @@ class ProcessManager:
         """
         return self.get_systemd_service_path().exists()
 
-    def install_systemd_service(self, executable_path: str, args: str = "--daemon") -> bool:
+    def install_systemd_service(self, executable_path: str, args: str = "daemon") -> bool:
         """
         Generate and install systemd user service.
         
@@ -391,88 +391,141 @@ WantedBy=default.target
             'error_log': str(self.error_log)
         }
         
-    def get_top_network_apps(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_top_network_apps(self, limit: int = 10, ssid: str = None) -> List[Dict[str, Any]]:
         """
         Get top applications using the network.
-        
+
+        Combines currently active connections with previously saved app_usage
+        data from the data file, so apps that were active earlier still appear.
+
         Args:
             limit: Maximum number of apps to return (default: 10)
-            
+            ssid: Current SSID to load saved app_usage for
+
         Returns:
-            List of dicts with app info including PID, name, and network usage
+            List of dicts with app info including PID, name, connections, and
+            estimated network usage.
         """
         try:
-            # Get per-process network I/O counters
-            net_io = psutil.net_io_counters(pernic=False)
-            if not net_io:
-                return []
-                
+            # Get system-level network I/O for context
+            sys_net = psutil.net_io_counters()
+
             # Get all processes with network connections
             processes = {}
-            
+
             # First, get processes with active connections
             for conn in psutil.net_connections(kind='inet'):
                 try:
                     if not conn.pid:
                         continue
-                        
+
                     proc = psutil.Process(conn.pid)
                     with proc.oneshot():
                         name = proc.name()
                         username = proc.username()
-                        
+                        try:
+                            parent_name = proc.parent().name() if proc.parent() else name
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            parent_name = name
+
                     if conn.pid not in processes:
                         processes[conn.pid] = {
                             'pid': conn.pid,
                             'name': name,
+                            'parent': parent_name,
                             'user': username,
                             'bytes_sent': 0,
                             'bytes_recv': 0,
                             'connections': 0,
-                            'last_activity': 0
+                            'local_addrs': [],
+                            'remote_addrs': [],
                         }
-                    
-                    # Update connection count
+
                     processes[conn.pid]['connections'] += 1
-                            
+                    local = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else ""
+                    remote = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else ""
+                    if local:
+                        processes[conn.pid]['local_addrs'].append(local)
+                    if remote:
+                        processes[conn.pid]['remote_addrs'].append(remote)
+
                 except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, psutil.ZombieProcess):
                     continue
-            
-            # Now get I/O counters for processes with network activity
-            for proc in psutil.process_iter(['pid', 'name', 'username']):
+
+            # Read /proc/{pid}/io for I/O bytes
+            for pid, data in processes.items():
                 try:
-                    pid = proc.info['pid']
-                    if pid not in processes:
-                        continue
-                        
-                    # Get process I/O counters
-                    io = proc.io_counters()
-                    if io:
-                        processes[pid].update({
-                            'bytes_sent': io.write_bytes,
-                            'bytes_recv': io.read_bytes,
-                            'total_bytes': io.write_bytes + io.read_bytes
-                        })
-                    
-                except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError, psutil.ZombieProcess):
-                    if proc.info['pid'] in processes:
-                        del processes[proc.info['pid']]
-            
-            # Convert to list and sort by total bytes
+                    io_path = f"/proc/{pid}/io"
+                    with open(io_path, 'r') as f:
+                        for line in f:
+                            if line.startswith('rchar:'):
+                                data['bytes_recv'] = int(line.split(':')[1].strip())
+                            elif line.startswith('wchar:'):
+                                data['bytes_sent'] = int(line.split(':')[1].strip())
+                    data['total_bytes'] = data['bytes_sent'] + data['bytes_recv']
+                except (FileNotFoundError, PermissionError, ValueError):
+                    data['total_bytes'] = 0
+
+            # Merge with saved app_usage from data file
+            saved_apps = {}
+            if ssid:
+                try:
+                    from .data_manager import DataManager
+                    dm = DataManager()
+                    app_usage = dm.usage_data.get(ssid, {}).get('app_usage', {})
+                    for app_name, data in app_usage.items():
+                        entries = data.get('entries', [])
+                        total_sent = sum(e.get('sent', 0) for e in entries)
+                        total_recv = sum(e.get('recv', 0) for e in entries)
+                        total = total_sent + total_recv
+                        if total > 0:
+                            saved_apps[app_name] = {
+                                'name': app_name,
+                                'bytes_sent': total_sent,
+                                'bytes_recv': total_recv,
+                                'total_bytes': total,
+                                'connections': 0,
+                                'user': '-',
+                                'parent': app_name,
+                            }
+                except Exception:
+                    pass
+
+            # Build active app names set (by name, not pid)
+            active_names = {d['name'] for d in processes.values()}
+
+            # Add saved apps that aren't currently active
+            for app_name, app_data in saved_apps.items():
+                if app_name not in active_names:
+                    # Try to find the PID if the process is running
+                    for pid, pdata in processes.items():
+                        if pdata['name'] == app_name:
+                            app_data['pid'] = pid
+                            app_data['connections'] = pdata['connections']
+                            app_data['user'] = pdata['user']
+                            break
+                    processes[app_data.get('pid', 0)] = app_data
+
+            # Convert to list and sort by total bytes (descending)
             sorted_apps = sorted(
                 processes.values(),
                 key=lambda x: x.get('total_bytes', 0),
                 reverse=True
             )
-            
-            # Filter out processes with no network activity
+
+            # Filter out processes with no activity
             active_apps = [
-                app for app in sorted_apps 
+                app for app in sorted_apps
                 if app.get('total_bytes', 0) > 0 or app.get('connections', 0) > 0
             ]
-            
+
+            # Add system network I/O info to each entry
+            for app in active_apps:
+                app['sys_net_sent'] = sys_net.bytes_sent if sys_net else 0
+                app['sys_net_recv'] = sys_net.bytes_recv if sys_net else 0
+
             return active_apps[:min(limit, len(active_apps))]
-            
+
         except Exception as e:
             self._log_error(f"Error getting top network apps: {e}")
             return []
