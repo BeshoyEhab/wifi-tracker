@@ -4,7 +4,6 @@ Handles data persistence, validation, and management
 """
 
 import json
-import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path

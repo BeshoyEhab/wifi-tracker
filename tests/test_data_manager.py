@@ -3,8 +3,7 @@ import shutil
 import json
 import tempfile
 from pathlib import Path
-from datetime import datetime
-from unittest.mock import patch, MagicMock
+
 
 # Import modules to test
 # We need to add project root to path relative to tests/
@@ -12,7 +11,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from wifi_tracker_modules.data_manager import DataManager
-from wifi_tracker_modules.config import Config
+
 
 
 class TestDataManager(unittest.TestCase):

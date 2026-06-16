@@ -5,19 +5,15 @@ Handles all display formatting and output operations using Rich
 
 import subprocess
 import os
-import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 try:
     from rich.console import Console
     from rich.table import Table
     from rich.panel import Panel
     from rich.layout import Layout
-    from rich.live import Live
-    from rich.text import Text
     from rich.align import Align
-    from rich.progress import Progress, BarColumn, TextColumn
     from rich.box import ROUNDED
 
     RICH_AVAILABLE = True
@@ -195,7 +191,7 @@ class DisplayManager:
             lines.append(f"Upload Rate:   {self.format_rate(tx_rate)}")
             lines.append("-" * 50)
 
-            lines.append(f"Session Usage:")
+            lines.append("Session Usage:")
             lines.append(f"  Down: {self.format_bytes(session_rx)}")
             lines.append(f"  Up:   {self.format_bytes(session_tx)}")
             lines.append(f"  Total: {self.format_bytes(session_rx + session_tx)}")

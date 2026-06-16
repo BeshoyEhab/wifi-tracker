@@ -20,7 +20,6 @@ try:
     from .network_monitor import NetworkMonitor
     from .process_manager import ProcessManager
     from .notification_manager import notifier, Urgency
-    from .config import Config
 except ImportError as e:
     # Fallback for direct execution/testing if not installed as package
     try:
@@ -29,7 +28,6 @@ except ImportError as e:
         from wifi_tracker_modules.network_monitor import NetworkMonitor
         from wifi_tracker_modules.process_manager import ProcessManager
         from wifi_tracker_modules.notification_manager import notifier, Urgency
-        from wifi_tracker_modules.config import Config
     except ImportError:
         print(f"Error importing modules: {e}")
         print(
@@ -624,7 +622,7 @@ class WiFiTracker:
                 else "Not Installed"
             )
 
-            print(f"\n🔧 Process Information:")
+            print("\n🔧 Process Information:")
             print(f"Current PID: {process_info['current_pid']}")
             print(
                 f"Daemon running: {'Yes' if process_info['daemon_running'] else 'No'}"

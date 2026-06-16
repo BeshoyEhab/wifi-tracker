@@ -10,7 +10,7 @@ import signal
 import psutil
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 
 from wifi_tracker_modules.config import Config
 

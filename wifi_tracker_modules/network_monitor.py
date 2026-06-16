@@ -6,7 +6,6 @@ Handles network interface monitoring and data collection
 import subprocess
 import re
 import time
-import os
 from datetime import datetime
 from typing import Dict, Optional, Tuple, Any
 
@@ -41,7 +40,7 @@ class NetworkMonitor:
     def _interface_exists(self, interface: str) -> bool:
         """Check if network interface exists"""
         try:
-            with open(f'/sys/class/net/{interface}/operstate', 'r') as f:
+            with open(f'/sys/class/net/{interface}/operstate', 'r') as _:
                 return True
         except FileNotFoundError:
             return False
@@ -49,7 +48,7 @@ class NetworkMonitor:
     def get_interface_stats(self) -> Optional[Dict[str, int]]:
         """Get current interface statistics"""
         try:
-            with open(f'/proc/net/dev', 'r') as f:
+            with open('/proc/net/dev', 'r') as f:
                 for line in f:
                     if self.interface in line:
                         parts = line.split()
