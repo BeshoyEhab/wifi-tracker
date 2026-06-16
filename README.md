@@ -1,6 +1,6 @@
 # WiFi Tracker
 
-[![CI](https://github.com/Bisho/wifi-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/Bisho/wifi-tracker/actions/workflows/ci.yml)
+[![CI](https://github.com/BeshoyEhab/wifi-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/BeshoyEhab/wifi-tracker/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.md)
 
