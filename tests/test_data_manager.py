@@ -103,5 +103,39 @@ class TestDataManager(unittest.TestCase):
         self.assertIn(ssid, new_manager.usage_data)
         self.assertEqual(new_manager.usage_data[ssid]['total_rx'], 1000)
 
+    def test_get_usage_for_graph_24h(self):
+        """Test hourly graph data returns list of (label, bytes) tuples"""
+        ssid = "GraphWiFi"
+        self.data_manager.update_usage(ssid, 1000, 1000)
+        self.data_manager.update_usage(ssid, 2000, 2000)
+        result = self.data_manager.get_usage_for_graph(ssid, "24h")
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+        self.assertEqual(len(result[0]), 2)
+
+    def test_get_usage_for_graph_1h(self):
+        """Test minute graph data"""
+        ssid = "MinuteWiFi"
+        self.data_manager.update_usage(ssid, 1000, 1000)
+        self.data_manager.update_usage(ssid, 2000, 2000)
+        result = self.data_manager.get_usage_for_graph(ssid, "1h")
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+
+    def test_get_usage_for_graph_7d(self):
+        """Test daily graph data"""
+        ssid = "DayWiFi"
+        self.data_manager.update_usage(ssid, 1000, 1000)
+        result = self.data_manager.get_usage_for_graph(ssid, "7d")
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+
+    def test_get_usage_for_graph_unknown_ssid(self):
+        """Test graph for unknown SSID returns zeros"""
+        result = self.data_manager.get_usage_for_graph("Nonexistent", "24h")
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+        self.assertEqual(result[0][1], 0)
+
 if __name__ == '__main__':
     unittest.main()

@@ -546,27 +546,39 @@ class DisplayManager:
             usage_data, limits_data, current_ssid, current_measurement
         )
 
-    def print_ascii_graph(self, hourly_data: list, ssid: str, width: int = 50) -> None:
-        """Print a simple ASCII bar graph of hourly usage.
+    def print_ascii_graph(self, hourly_data: list, ssid: str, width: int = 50, range_label: str = "24h") -> None:
+        """Print a simple ASCII bar graph of usage.
 
         Args:
-            hourly_data: List of (hour_label, bytes_used) tuples for last 24h.
+            hourly_data: List of (label, bytes_used) tuples.
             ssid: Network name for display.
             width: Max bar width in characters.
+            range_label: Range string for display (e.g. "1h", "24h", "7d").
         """
         if not hourly_data:
             return
 
         max_val = max((v for _, v in hourly_data), default=1) or 1
-        lines = [f"\n  Usage graph for {ssid} (last 24h):"]
-        lines.append(f"  {'Hour':<6} {'Used':<10} Graph")
-        lines.append(f"  {'─'*6} {'─'*10} {'─'*width}")
 
-        for hour_label, bytes_used in hourly_data:
+        range_names = {
+            "1h": "last 1h (per minute)",
+            "24h": "last 24h (per hour)",
+            "7d": "last 7 days",
+            "30d": "last 30 days",
+            "12m": "last 12 months",
+        }
+        range_desc = range_names.get(range_label, range_label)
+
+        col_label = "Time" if range_label in ("1h", "24h") else "Date"
+        lines = [f"\n  Usage graph for {ssid} ({range_desc}):"]
+        lines.append(f"  {col_label:<10} {'Used':<10} Graph")
+        lines.append(f"  {'─'*10} {'─'*10} {'─'*width}")
+
+        for label, bytes_used in hourly_data:
             bar_len = int((bytes_used / max_val) * width) if max_val > 0 else 0
             bar = "█" * bar_len + "░" * (width - bar_len)
             size = self.format_bytes(bytes_used)
-            lines.append(f"  {hour_label:<6} {size:<10} {bar}")
+            lines.append(f"  {label:<10} {size:<10} {bar}")
 
         if self.console:
             self.console.print("\n".join(lines))

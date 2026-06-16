@@ -3,6 +3,7 @@ App Manager Module for WiFi Tracker
 Handles app detection, high-usage alerts, safe/kill lists.
 """
 
+import threading
 from datetime import datetime
 from typing import Set
 
@@ -34,6 +35,35 @@ class AppManager:
                         )
         except Exception:
             pass
+
+    def _handle_high_usage_action(self, ssid: str, app_name: str, size: str, notified: Set[str]) -> None:
+        """Handle high-usage notification response in a background thread."""
+        try:
+            window_msg = AlertManager.format_window(
+                self.data_manager.get_alert_settings()["window_hours"]
+            )
+            choice = notifier.ask_high_usage_action(ssid, app_name, size, window_msg)
+
+            if choice == "safe_once":
+                self.data_manager.mark_app_safe(ssid, app_name, always=False)
+                self.process_manager._log_info(f"User marked {app_name} as safe (once) on {ssid}")
+            elif choice == "safe_always":
+                self.data_manager.mark_app_safe(ssid, app_name, always=True)
+                self.process_manager._log_info(f"User marked {app_name} as safe (always) on {ssid}")
+            elif choice == "kill_once":
+                killed = self.data_manager.kill_app(app_name)
+                self.data_manager.mark_app_kill(ssid, app_name, always=False)
+                self.process_manager._log_info(f"User killed {app_name} ({killed} procs) on {ssid}")
+            elif choice == "kill_always":
+                killed = self.data_manager.kill_app(app_name)
+                self.data_manager.mark_app_kill(ssid, app_name, always=True)
+                self.process_manager._log_info(f"User killed {app_name} ({killed} procs, always) on {ssid}")
+            else:
+                self.process_manager._log_info(f"High usage alert for {app_name} ({size}) on {ssid} - ignored")
+
+            notified.add(app_name)
+        except Exception as e:
+            self.process_manager._log_error(f"Error handling high usage action: {e}")
 
     def check_high_usage_apps(self, ssid: str, notified: Set[str]) -> None:
         """Check for apps exceeding the configured data usage threshold."""
@@ -79,28 +109,14 @@ class AppManager:
                     continue
 
                 size = self.display_manager.format_bytes(total_bytes)
-                window_msg = AlertManager.format_window(window)
-
-                choice = notifier.ask_high_usage_action(ssid, app_name, size, window_msg)
-
-                if choice == "safe_once":
-                    self.data_manager.mark_app_safe(ssid, app_name, always=False)
-                    self.process_manager._log_info(f"User marked {app_name} as safe (once) on {ssid}")
-                elif choice == "safe_always":
-                    self.data_manager.mark_app_safe(ssid, app_name, always=True)
-                    self.process_manager._log_info(f"User marked {app_name} as safe (always) on {ssid}")
-                elif choice == "kill_once":
-                    killed = self.data_manager.kill_app(app_name)
-                    self.data_manager.mark_app_kill(ssid, app_name, always=False)
-                    self.process_manager._log_info(f"User killed {app_name} ({killed} procs) on {ssid}")
-                elif choice == "kill_always":
-                    killed = self.data_manager.kill_app(app_name)
-                    self.data_manager.mark_app_kill(ssid, app_name, always=True)
-                    self.process_manager._log_info(f"User killed {app_name} ({killed} procs, always) on {ssid}")
-                else:
-                    self.process_manager._log_info(f"High usage alert for {app_name} ({size}) on {ssid} - ignored")
-
                 notified.add(app_name)
+
+                thread = threading.Thread(
+                    target=self._handle_high_usage_action,
+                    args=(ssid, app_name, size, notified),
+                    daemon=True,
+                )
+                thread.start()
 
         except Exception as e:
             self.process_manager._log_error(f"Error checking high usage apps: {e}")

@@ -550,6 +550,7 @@ class DataManager:
                 "connection_duration": 0,
                 "data_points": 0,
                 "hourly": {},
+                "minutely": {},
             }
 
         # Get daily data and update it
@@ -562,6 +563,14 @@ class DataManager:
         hour_key = timestamp.strftime("%H")
         hourly = daily_data.setdefault("hourly", {})
         hourly[hour_key] = hourly.get(hour_key, 0) + rx_delta + tx_delta
+
+        # Track per-minute data for 1h graph
+        minute_key = timestamp.strftime("%H:%M")
+        minutely = daily_data.setdefault("minutely", {})
+        minutely[minute_key] = minutely.get(minute_key, 0) + rx_delta + tx_delta
+        if len(minutely) > 120:
+            oldest = min(minutely.keys())
+            del minutely[oldest]
 
         # Safely update peak rates
         current_peak_rx = daily_data.get("peak_rx_rate", 0) or 0
@@ -776,48 +785,91 @@ class DataManager:
 
         return result
 
-    def get_hourly_usage_for_graph(
-        self, ssid: str, hours: int = 24
+    def get_usage_for_graph(
+        self, ssid: str, range_str: str = "24h"
     ) -> list:
         """
-        Get hourly usage data for the graph, built from daily.hourly
-        (interface-level counters). Falls back to app_usage entries only
-        when hourly data is missing.
+        Get usage data for the graph at the appropriate granularity.
 
         Args:
             ssid: The SSID name.
-            hours: Number of hours to look back (default 24).
+            range_str: One of "1h", "24h", "7d", "30d", "12m".
 
         Returns:
-            List of (hour_label, bytes_used) tuples.
+            List of (label, bytes_used) tuples.
         """
         now = datetime.now()
-        hourly = []
+
+        if range_str == "1h":
+            return self._get_minutely_graph(ssid, now, minutes=60)
+        elif range_str == "7d":
+            return self._get_daily_graph(ssid, now, days=7)
+        elif range_str == "30d":
+            return self._get_daily_graph(ssid, now, days=30)
+        elif range_str == "12m":
+            return self._get_monthly_graph(ssid, now, months=12)
+        else:
+            return self._get_hourly_graph(ssid, now, hours=24)
+
+    def _get_minutely_graph(self, ssid: str, now: datetime, minutes: int = 60) -> list:
+        """Per-minute usage for last N minutes."""
+        result = []
+        daily = self.usage_data.get(ssid, {}).get("daily", {})
+
+        for m in range(minutes, -1, -1):
+            ts = now - timedelta(minutes=m)
+            minute_key = ts.strftime("%H:%M")
+            day_key = ts.strftime("%Y-%m-%d")
+            day_data = daily.get(day_key, {})
+            total = day_data.get("minutely", {}).get(minute_key, 0)
+            result.append((ts.strftime("%H:%M"), total))
+
+        return result
+
+    def _get_hourly_graph(self, ssid: str, now: datetime, hours: int = 24) -> list:
+        """Per-hour usage for last N hours."""
+        result = []
+        daily = self.usage_data.get(ssid, {}).get("daily", {})
 
         for h in range(hours, -1, -1):
             ts = now - timedelta(hours=h)
-            hour_start = ts.replace(minute=0, second=0, microsecond=0)
-            hour_end = hour_start + timedelta(hours=1)
+            hour_key = ts.strftime("%H")
+            day_key = ts.strftime("%Y-%m-%d")
+            day_data = daily.get(day_key, {})
+            total = day_data.get("hourly", {}).get(hour_key, 0)
+            result.append((ts.strftime("%H:00"), total))
 
+        return result
+
+    def _get_daily_graph(self, ssid: str, now: datetime, days: int = 30) -> list:
+        """Per-day usage for last N days."""
+        result = []
+        daily = self.usage_data.get(ssid, {}).get("daily", {})
+
+        for d in range(days, -1, -1):
+            ts = now - timedelta(days=d)
+            day_key = ts.strftime("%Y-%m-%d")
+            day_data = daily.get(day_key, {})
+            total = day_data.get("rx", 0) + day_data.get("tx", 0)
+            result.append((ts.strftime("%m-%d"), total))
+
+        return result
+
+    def _get_monthly_graph(self, ssid: str, now: datetime, months: int = 12) -> list:
+        """Per-month usage for last N months."""
+        result = []
+        daily = self.usage_data.get(ssid, {}).get("daily", {})
+
+        for m in range(months, -1, -1):
+            month_date = now - timedelta(days=m * 30)
+            month_key = month_date.strftime("%Y-%m")
             total = 0
-            if ssid in self.usage_data:
-                day_key = ts.strftime("%Y-%m-%d")
-                hour_key = ts.strftime("%H")
-                daily = self.usage_data[ssid].get("daily", {})
-                day_data = daily.get(day_key, {})
-                total = day_data.get("hourly", {}).get(hour_key, 0)
+            for day_key, day_data in daily.items():
+                if day_key.startswith(month_key):
+                    total += day_data.get("rx", 0) + day_data.get("tx", 0)
+            result.append((month_date.strftime("%Y-%m"), total))
 
-                if total == 0:
-                    app_usage = self.usage_data[ssid].get("app_usage", {})
-                    for data in app_usage.values():
-                        for entry in data.get("entries", []):
-                            entry_ts = entry.get("ts", "")
-                            if hour_start.isoformat() <= entry_ts < hour_end.isoformat():
-                                total += entry.get("sent", 0) + entry.get("recv", 0)
-
-            hourly.append((ts.strftime("%H:00"), total))
-
-        return hourly
+        return result
 
     def get_networks(self) -> List[Dict[str, Any]]:
         """Get all saved networks with their gateway IPs and SSIDs."""

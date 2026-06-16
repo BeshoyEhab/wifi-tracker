@@ -662,10 +662,20 @@ def main():
     install-service     Install systemd service
     remove-service      Remove systemd service
 
+  RANGE (for graph, status, today)
+    --range 1h          Last hour (per minute)
+    --range 24h         Last 24 hours (per hour) [default]
+    --range 7d          Last 7 days
+    --range 30d         Last 30 days
+    --range 12m         Last 12 months
+
   EXAMPLES
     wifi-tracker daemon                         Start monitoring
     wifi-tracker limit HomeWiFi 5GB monthly     Set 5GB monthly cap
     wifi-tracker alert 2GB 1h                   Alert on 2GB/hour
+    wifi-tracker graph --range 1h               Last hour per minute
+    wifi-tracker graph --range 7d               Last 7 days
+    wifi-tracker status --range 30d             Last 30 days stats
     wifi-tracker trust-gateway HomeWiFi 10.0.0.1 Trust your router
     wifi-tracker mark-safe HomeWiFi firefox --always  Always allow firefox
     wifi-tracker today                          Quick status check
@@ -688,13 +698,25 @@ def main():
     status_p.add_argument("--all", action="store_true", help="Show all networks")
     status_p.add_argument("--from-date", help="Start date (YYYY-MM-DD)")
     status_p.add_argument("--to-date", help="End date (YYYY-MM-DD)")
+    status_p.add_argument("--range", dest="range_str", default="24h",
+                          choices=["1h", "24h", "7d", "30d", "12m"],
+                          help="Time range (default: 24h)")
 
-    subparsers.add_parser("today", aliases=["t"], help="Quick one-line status")
+    today_p = subparsers.add_parser("today", aliases=["t"], help="Quick one-line status")
+    today_p.add_argument("--range", dest="range_str", default="24h",
+                         choices=["1h", "24h", "7d", "30d", "12m"],
+                         help="Time range (default: 24h)")
 
-    graph_p = subparsers.add_parser("graph", aliases=["g"], help="ASCII usage graph (24h)")
+    graph_p = subparsers.add_parser("graph", aliases=["g"], help="ASCII usage graph")
     graph_p.add_argument("ssid", nargs="?", help="Network SSID (omit for current)")
+    graph_p.add_argument("--range", dest="range_str", default="24h",
+                         choices=["1h", "24h", "7d", "30d", "12m"],
+                         help="Time range (default: 24h)")
 
-    subparsers.add_parser("top-apps", help="Show apps using the network")
+    top_apps_p = subparsers.add_parser("top-apps", help="Show apps using the network")
+    top_apps_p.add_argument("--range", dest="range_str", default="24h",
+                            choices=["1h", "24h", "7d", "30d", "12m"],
+                            help="Time range (default: 24h)")
     subparsers.add_parser("networks", help="Show saved networks")
 
     # ── Limits & Alerts ─────────────────────────────────────────
@@ -779,6 +801,13 @@ def main():
                 custom_end_date = datetime.strptime(args.to_date, "%Y-%m-%d")
             if args.from_date and not args.to_date:
                 custom_end_date = datetime.now()
+            if not custom_start_date and not custom_end_date:
+                range_str = getattr(args, 'range_str', '24h')
+                range_days = {"1h": 0, "24h": 1, "7d": 7, "30d": 30, "12m": 365}
+                days = range_days.get(range_str, 1)
+                if days > 0:
+                    custom_start_date = datetime.now() - timedelta(days=days)
+                    custom_end_date = datetime.now()
             if args.all:
                 tracker.status_all_mode()
             else:
@@ -880,22 +909,19 @@ def main():
             if not found:
                 print("No trusted gateways configured.")
         elif command in ("today", "t"):
-            # Quick one-line status
             measurement = tracker.monitor.get_measurement()
             current_ssid = measurement.get("ssid") if measurement else None
             if not current_ssid:
                 print("Not connected to any network.")
             else:
-                today_usage = tracker._get_current_period_usage(current_ssid)
-                # Get total usage for this SSID
+                range_str = getattr(args, 'range_str', '24h')
+                range_usage = sum(v for _, v in tracker.data_manager.get_usage_for_graph(current_ssid, range_str))
                 ssid_data = tracker.data_manager.usage_data.get(current_ssid, {})
                 total = ssid_data.get("total_rx", 0) + ssid_data.get("total_tx", 0)
                 rate_up = measurement.get("tx_rate", 0)
                 rate_down = measurement.get("rx_rate", 0)
-                # Get limit
                 limit_info = tracker.data_manager.limits_data.get(current_ssid, {})
                 limit = limit_info.get("limit", 0)
-                # Get top app
                 top_app = ""
                 try:
                     apps = tracker.process_manager.get_top_network_apps(limit=1)
@@ -904,7 +930,7 @@ def main():
                 except Exception:
                     pass
                 tracker.display_manager.print_quick_status(
-                    current_ssid, today_usage, total, rate_up, rate_down, limit, top_app
+                    current_ssid, range_usage, total, rate_up, rate_down, limit, top_app
                 )
         elif command in ("graph", "g"):
             target_ssid = getattr(args, 'ssid', None)
@@ -915,8 +941,9 @@ def main():
                 print("Not connected to any network. Usage: wifi-tracker graph SSID")
             else:
                 tracker.data_manager.load_data()
-                hourly = tracker.data_manager.get_hourly_usage_for_graph(target_ssid)
-                tracker.display_manager.print_ascii_graph(hourly, target_ssid)
+                range_str = getattr(args, 'range_str', '24h')
+                hourly = tracker.data_manager.get_usage_for_graph(target_ssid, range_str)
+                tracker.display_manager.print_ascii_graph(hourly, target_ssid, range_label=range_str)
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
