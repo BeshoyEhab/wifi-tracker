@@ -524,7 +524,6 @@ class DataManager:
                 "peak_tx_rate": 0,
                 "connection_duration": 0,
                 "data_points": 0,
-                "hourly": {},
             }
 
         # Get daily data and update it
@@ -532,11 +531,6 @@ class DataManager:
         daily_data["rx"] = daily_data.get("rx", 0) + rx_delta
         daily_data["tx"] = daily_data.get("tx", 0) + tx_delta
         daily_data["last_connection"] = timestamp.isoformat()
-
-        # Track hourly data for graph
-        hour_key = timestamp.strftime("%H")
-        hourly = daily_data.setdefault("hourly", {})
-        hourly[hour_key] = hourly.get(hour_key, 0) + rx_delta + tx_delta
 
         # Safely update peak rates
         current_peak_rx = daily_data.get("peak_rx_rate", 0) or 0
@@ -618,10 +612,10 @@ class DataManager:
         app_data = app_usage[app_name]
         entries = app_data["entries"]
         pids = app_data.setdefault("pids", {})
-        cutoff = timestamp - timedelta(hours=1)
+        cutoff = timestamp - timedelta(days=90)
         cutoff_iso = cutoff.isoformat()
 
-        # Remove entries older than 1 hour
+        # Remove entries older than 90 days
         entries[:] = [e for e in entries if e.get("ts", "") > cutoff_iso]
 
         # Track delta per PID
@@ -694,6 +688,96 @@ class DataManager:
                 })
 
         return sorted(high_apps, key=lambda x: x["total_bytes"], reverse=True)
+
+    def get_app_usage_range(
+        self,
+        ssid: str,
+        app_name: Optional[str] = None,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get app usage entries for any time range.
+
+        Args:
+            ssid: The SSID name.
+            app_name: Specific app name, or None for all apps.
+            start: Start of time range (default: 24h ago).
+            end: End of time range (default: now).
+
+        Returns:
+            Dict with app_name -> {entries, total_sent, total_recv, total}.
+        """
+        if ssid not in self.usage_data:
+            return {}
+
+        now = datetime.now()
+        if start is None:
+            start = now - timedelta(hours=24)
+        if end is None:
+            end = now
+
+        start_iso = start.isoformat()
+        end_iso = end.isoformat()
+
+        app_usage = self.usage_data[ssid].get("app_usage", {})
+        result = {}
+
+        for name, data in app_usage.items():
+            if app_name and name != app_name:
+                continue
+
+            entries = data.get("entries", [])
+            filtered = [
+                e for e in entries
+                if start_iso <= e.get("ts", "") <= end_iso
+            ]
+
+            total_sent = sum(e.get("sent", 0) for e in filtered)
+            total_recv = sum(e.get("recv", 0) for e in filtered)
+
+            result[name] = {
+                "entries": filtered,
+                "total_sent": total_sent,
+                "total_recv": total_recv,
+                "total": total_sent + total_recv,
+            }
+
+        return result
+
+    def get_hourly_usage_for_graph(
+        self, ssid: str, hours: int = 24
+    ) -> list:
+        """
+        Get hourly usage data for the graph, built from app_usage entries.
+
+        Args:
+            ssid: The SSID name.
+            hours: Number of hours to look back (default 24).
+
+        Returns:
+            List of (hour_label, bytes_used) tuples.
+        """
+        now = datetime.now()
+        hourly = []
+
+        for h in range(hours, 0, -1):
+            ts = now - timedelta(hours=h)
+            hour_start = ts.replace(minute=0, second=0, microsecond=0)
+            hour_end = hour_start + timedelta(hours=1)
+
+            total = 0
+            if ssid in self.usage_data:
+                app_usage = self.usage_data[ssid].get("app_usage", {})
+                for data in app_usage.values():
+                    for entry in data.get("entries", []):
+                        entry_ts = entry.get("ts", "")
+                        if hour_start.isoformat() <= entry_ts < hour_end.isoformat():
+                            total += entry.get("sent", 0) + entry.get("recv", 0)
+
+            hourly.append((ts.strftime("%H:%M"), total))
+
+        return hourly
 
     def get_networks(self) -> List[Dict[str, Any]]:
         """Get all saved networks with their gateway IPs and SSIDs."""

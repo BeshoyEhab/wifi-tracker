@@ -304,10 +304,12 @@ class WiFiTracker:
             threshold = settings["threshold_bytes"]
             window = settings["window_hours"]
 
-            # Record current I/O for all active apps
+            # Record current I/O for all active apps (skip phantom pid=0 entries)
             top_apps = self.process_manager.get_top_network_apps(limit=20, ssid=ssid)
             now = datetime.now()
             for app in top_apps:
+                if app.get("pid", 0) == 0:
+                    continue
                 self.data_manager.update_app_usage(
                     ssid,
                     app.get("name", "unknown"),
@@ -1161,18 +1163,7 @@ def main():
             if not target_ssid:
                 print("Not connected to any network. Usage: wifi-tracker graph SSID")
             else:
-                # Build hourly data from daily usage
-                ssid_data = tracker.data_manager.usage_data.get(target_ssid, {})
-                daily = ssid_data.get("daily", {})
-                hourly = []
-                now = datetime.now()
-                for h in range(24, 0, -1):
-                    ts = now - timedelta(hours=h)
-                    day_key = ts.strftime("%Y-%m-%d")
-                    hour_key = ts.strftime("%H")
-                    day_data = daily.get(day_key, {})
-                    hour_bytes = day_data.get("hourly", {}).get(hour_key, 0)
-                    hourly.append((ts.strftime("%H:%M"), hour_bytes))
+                hourly = tracker.data_manager.get_hourly_usage_for_graph(target_ssid)
                 tracker.display_manager.print_ascii_graph(hourly, target_ssid)
 
     except KeyboardInterrupt:
