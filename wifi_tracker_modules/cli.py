@@ -1041,15 +1041,26 @@ def _handle_completion(shell: str, comp_word: str) -> None:
         for hint in ["show", "1GB", "2GB", "5GB"]:
             if hint.lower().startswith(cur):
                 suggestions.append(hint)
-    elif argc == 1 and cmd in ("today", "stop", "install-service", "remove-service", "networks", "top-apps"):
-        # No args subcommands: no suggestions
+    elif argc == 1 and cmd in ("today", "top-apps"):
+        for hint in ["--range"]:
+            if hint.startswith(cur):
+                suggestions.append(hint)
+    elif argc == 1 and cmd in ("stop", "install-service", "remove-service", "networks"):
         pass
     elif argc == 1 and cmd == "status":
-        for hint in ["--all", "--from-date", "--to-date"]:
+        for hint in ["--all", "--from-date", "--to-date", "--range"]:
+            if hint.startswith(cur):
+                suggestions.append(hint)
+    elif argc == 1 and cmd == "graph":
+        for hint in ["--range"]:
             if hint.startswith(cur):
                 suggestions.append(hint)
     elif argc == 1 and cmd == "cleanup":
         for hint in ["30", "60", "90", "365"]:
+            if hint.startswith(cur):
+                suggestions.append(hint)
+    elif prev == "--range":
+        for hint in ["1h", "24h", "7d", "30d", "12m"]:
             if hint.startswith(cur):
                 suggestions.append(hint)
     elif prev in ("--interface", "-i"):
