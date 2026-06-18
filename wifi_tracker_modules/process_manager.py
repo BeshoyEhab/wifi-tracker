@@ -500,17 +500,32 @@ WantedBy=default.target
                     data["total_bytes"] = 0
 
             # Merge with saved app_usage from data file
+            # Only sum entries from today to avoid inflating usage across day boundaries
             saved_apps = {}
             if ssid:
                 try:
+                    from datetime import datetime
+
                     from .data_manager import DataManager
 
                     dm = DataManager()
                     app_usage = dm.usage_data.get(ssid, {}).get("app_usage", {})
+                    now = datetime.now()
+                    today_start = now.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ).isoformat()
                     for app_name, data in app_usage.items():
                         entries = data.get("entries", [])
-                        total_sent = sum(e.get("sent", 0) for e in entries)
-                        total_recv = sum(e.get("recv", 0) for e in entries)
+                        total_sent = sum(
+                            e.get("sent", 0)
+                            for e in entries
+                            if e.get("ts", "") >= today_start
+                        )
+                        total_recv = sum(
+                            e.get("recv", 0)
+                            for e in entries
+                            if e.get("ts", "") >= today_start
+                        )
                         total = total_sent + total_recv
                         if total > 0:
                             saved_apps[app_name] = {
