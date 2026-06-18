@@ -4,13 +4,14 @@ Handles process management, daemon operations, and instance control
 """
 
 import os
+import signal
+import subprocess
 import sys
 import time
-import signal
-import psutil
-import subprocess
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any
+
+import psutil
 
 from wifi_tracker_modules.config import Config
 
@@ -43,7 +44,7 @@ class ProcessManager:
         self.pid_file.parent.mkdir(parents=True, exist_ok=True)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    def find_all_instances(self) -> List[psutil.Process]:
+    def find_all_instances(self) -> list[psutil.Process]:
         """
         Find ALL instances of wifi-tracker regardless of command line options.
 
@@ -64,18 +65,19 @@ class ProcessManager:
                     cmdline_str = " ".join(cmdline)
 
                     # Match various ways the script might be invoked
-                    if any(
-                        [
-                            self.script_name in cmdline_str,
-                            "wifi-tracker" in cmdline_str,
-                            "wifi_tracker" in cmdline_str,
-                            any("wifi-tracker" in arg for arg in cmdline),
-                            any("wifi_tracker" in arg for arg in cmdline),
-                        ]
+                    if (
+                        any(
+                            [
+                                self.script_name in cmdline_str,
+                                "wifi-tracker" in cmdline_str,
+                                "wifi_tracker" in cmdline_str,
+                                any("wifi-tracker" in arg for arg in cmdline),
+                                any("wifi_tracker" in arg for arg in cmdline),
+                            ]
+                        )
+                        and proc.pid != os.getpid()
                     ):
-                        # Skip the current process
-                        if proc.pid != os.getpid():
-                            instances.append(proc)
+                        instances.append(proc)
 
                 except (
                     psutil.NoSuchProcess,
@@ -166,7 +168,7 @@ class ProcessManager:
             return False
 
         try:
-            with open(self.pid_file, "r") as f:
+            with open(self.pid_file) as f:
                 pid = int(f.read().strip())
 
             # Check if process with this PID exists and is our script
@@ -348,7 +350,7 @@ WantedBy=default.target
         sys.stderr.flush()
 
         # Redirect to /dev/null
-        with open("/dev/null", "r") as dev_null_r:
+        with open("/dev/null") as dev_null_r:
             os.dup2(dev_null_r.fileno(), sys.stdin.fileno())
 
         with open("/dev/null", "w") as dev_null_w:
@@ -395,7 +397,7 @@ WantedBy=default.target
         except Exception:
             pass  # Fail silently in daemon mode
 
-    def get_process_info(self) -> Dict[str, Any]:
+    def get_process_info(self) -> dict[str, Any]:
         """
         Get information about current process and instances.
 
@@ -417,7 +419,7 @@ WantedBy=default.target
 
     def get_top_network_apps(
         self, limit: int = 10, ssid: str = None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get top applications using the network.
 
@@ -489,7 +491,7 @@ WantedBy=default.target
             for pid, data in processes.items():
                 try:
                     io_path = f"/proc/{pid}/io"
-                    with open(io_path, "r") as f:
+                    with open(io_path) as f:
                         for line in f:
                             if line.startswith("rchar:"):
                                 data["bytes_recv"] = int(line.split(":")[1].strip())
