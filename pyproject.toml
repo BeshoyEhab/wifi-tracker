@@ -1,6 +1,6 @@
 [project]
 name = "wifi-tracker"
-version = "0.1.0"
+version = "0.1.1"
 description = "Enhanced WiFi Usage Tracker"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,3 +18,39 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["wifi_tracker_modules*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+show_error_codes = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["psutil.*", "rich.*"]
+ignore_missing_imports = true

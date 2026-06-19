@@ -3,18 +3,19 @@ Display Manager Module for WiFi Tracker
 Handles all display formatting and output operations using Rich
 """
 
-import subprocess
+import json
 import os
+import subprocess
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Any
 
 try:
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.layout import Layout
     from rich.align import Align
     from rich.box import ROUNDED
+    from rich.console import Console
+    from rich.layout import Layout
+    from rich.panel import Panel
+    from rich.table import Table
 
     RICH_AVAILABLE = True
 except ImportError:
@@ -74,10 +75,10 @@ class DisplayManager:
 
     def _calculate_period_usage(
         self,
-        ssid_data: Dict[str, Any],
+        ssid_data: dict[str, Any],
         interval: str = "monthly",
-        custom_start_date: Optional[datetime] = None,
-        custom_end_date: Optional[datetime] = None,
+        custom_start_date: datetime | None = None,
+        custom_end_date: datetime | None = None,
     ) -> int:
         """Calculate usage for the specified interval or custom date range"""
         period_usage = 0
@@ -106,13 +107,13 @@ class DisplayManager:
             return period_usage
 
         if interval == "daily":
-            today = datetime.now().strftime("%Y-%m-%d")
-            daily_data = ssid_data.get("daily", {}).get(today, {})
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            daily_data = ssid_data.get("daily", {}).get(today_str, {})
             period_usage = daily_data.get("rx", 0) + daily_data.get("tx", 0)
 
         elif interval == "weekly":
-            today = datetime.now()
-            week_start = today - timedelta(days=today.weekday())
+            now = datetime.now()
+            week_start = now - timedelta(days=now.weekday())
 
             for i in range(7):
                 date = (week_start + timedelta(days=i)).strftime("%Y-%m-%d")
@@ -120,16 +121,16 @@ class DisplayManager:
                 period_usage += daily_data.get("rx", 0) + daily_data.get("tx", 0)
 
         elif interval == "monthly":
-            today = datetime.now()
-            month_start = today.replace(day=1)
+            now = datetime.now()
+            month_start = now.replace(day=1)
 
             current_date = month_start
-            while current_date.month == today.month:
+            while current_date.month == now.month:
                 date_str = current_date.strftime("%Y-%m-%d")
                 daily_data = ssid_data.get("daily", {}).get(date_str, {})
                 period_usage += daily_data.get("rx", 0) + daily_data.get("tx", 0)
                 current_date += timedelta(days=1)
-                if current_date > today:
+                if current_date > now:
                     break
 
         return period_usage
@@ -141,12 +142,12 @@ class DisplayManager:
         current_time: datetime,
         uptime: timedelta,
         update_count: int,
-        current_ssid: str,
+        current_ssid: str | None,
         last_save_time: float,
-        ssid_data: Dict[str, Any],
+        ssid_data: dict[str, Any],
         rx_rate: float,
         tx_rate: float,
-        limits_data: Dict[str, Any],
+        limits_data: dict[str, Any],
         interval: float,
         session_rx: int,
         session_tx: int,
@@ -214,11 +215,11 @@ class DisplayManager:
         current_time: datetime,
         uptime: timedelta,
         update_count: int,
-        current_ssid: str,
-        ssid_data: Dict[str, Any],
+        current_ssid: str | None,
+        ssid_data: dict[str, Any],
         rx_rate: float,
         tx_rate: float,
-        limits_data: Dict[str, Any],
+        limits_data: dict[str, Any],
         session_rx: int,
         session_tx: int,
     ) -> Layout:
@@ -416,17 +417,17 @@ class DisplayManager:
             if not apps:
                 print("No active network apps found.")
                 return
-            print(f"{'PID':>6}  {'User':<12} {'App':<20} {'Conns':>5}  {'Note'}")
-            print("-" * 70)
+            print(f"{'PID':>6}  {'User':<12} {'App':<20} {'Recv':>10}  {'Sent':>10}  {'Remote'}")
+            print("-" * 80)
             for app in apps:
                 pid = str(app.get("pid", "N/A"))
                 user = app.get("user", "unknown")[:12]
                 name = app.get("name", "unknown")[:20]
-                conns = str(app.get("connections", 0))
-                print(f"{pid:>6}  {user:<12} {name:<20} {conns:>5}")
-            print(
-                "\n  Note: Bytes shown are total process I/O (disk+network), not network-only."
-            )
+                recv = self.format_bytes(app.get("bytes_recv", 0))
+                sent = self.format_bytes(app.get("bytes_sent", 0))
+                remote_addrs = app.get("remote_addrs", [])
+                remote = remote_addrs[0] if remote_addrs else ""
+                print(f"{pid:>6}  {user:<12} {name:<20} {recv:>10}  {sent:>10}  {remote}")
             return
 
         table = Table(title="Top Network Applications", box=ROUNDED, expand=True)
@@ -434,31 +435,34 @@ class DisplayManager:
         table.add_column("PID", justify="right", style="dim")
         table.add_column("User", style="cyan")
         table.add_column("App Name", style="bold white")
-        table.add_column("Conns", justify="right", style="yellow")
-        table.add_column("I/O Total", justify="right", style="dim")
+        table.add_column("Recv", justify="right", style="green")
+        table.add_column("Sent", justify="right", style="yellow")
+        table.add_column("Remote", style="dim")
 
         for app in apps:
             pid = str(app.get("pid", "N/A"))
             user = app.get("user", "unknown")
             name = app.get("name", "unknown")
-            conns = str(app.get("connections", 0))
-            total = self.format_bytes(app.get("total_bytes", 0))
+            recv = self.format_bytes(app.get("bytes_recv", 0))
+            sent = self.format_bytes(app.get("bytes_sent", 0))
+            remote_addrs = app.get("remote_addrs", [])
+            remote = remote_addrs[0] if remote_addrs else ""
 
-            table.add_row(pid, user, name, conns, total)
+            table.add_row(pid, user, name, recv, sent, remote)
 
         self.console.print(table)
         self.console.print(
-            "  [dim]Note: I/O Total is process-wide (disk+network), not network-only. Conns = active network connections.[/dim]"
+            "  [dim]Note: Per-app bytes approximated via rchar-read_bytes (excludes disk I/O).[/dim]"
         )
 
     def print_detailed_stats(
         self,
-        usage_data: Dict[str, Any],
-        limits_data: Dict[str, Any],
-        current_ssid: Optional[str] = None,
-        current_measurement: Optional[Dict[str, Any]] = None,
-        custom_start_date: Optional[datetime] = None,
-        custom_end_date: Optional[datetime] = None,
+        usage_data: dict[str, Any],
+        limits_data: dict[str, Any],
+        current_ssid: str | None = None,
+        current_measurement: dict[str, Any] | None = None,
+        custom_start_date: datetime | None = None,
+        custom_end_date: datetime | None = None,
     ) -> None:
         """Print detailed statistics using Rich"""
         if not RICH_AVAILABLE:
@@ -519,8 +523,10 @@ class DisplayManager:
                         data, interval, custom_start_date, custom_end_date
                     )
                     percent = (limit_usage / limit) * 100
-                    color = "green" if percent < 80 else "red"
-                    limit_str = f"[{color}]{percent:.0f}% of {interval[0].upper()}[/]"
+                    color = (
+                        "green" if percent < 80 else "yellow" if percent < 95 else "red"
+                    )
+                    limit_str = f"[{color}]{percent:.0f}% of {interval} cap[/]"
 
             ssid_display = ssid
             if ssid == current_ssid:
@@ -536,19 +542,6 @@ class DisplayManager:
             )
 
         self.console.print(table)
-
-    def print_all_stats(
-        self,
-        usage_data: Dict[str, Any],
-        limits_data: Dict[str, Any],
-        current_ssid: str = None,
-        current_measurement: Dict[str, Any] = None,
-    ) -> None:
-        """Print detailed stats (using same format as detailed for now, but potentially expanded)"""
-        # For now, reuse the detailed stats table as it's cleaner
-        self.print_detailed_stats(
-            usage_data, limits_data, current_ssid, current_measurement
-        )
 
     def print_ascii_graph(
         self, hourly_data: list, ssid: str, width: int = 50, range_label: str = "24h"
@@ -623,3 +616,91 @@ class DisplayManager:
             self.console.print(f"\n  {line}\n")
         else:
             print(f"\n  {line}\n")
+
+    @staticmethod
+    def output_json(data: Any) -> None:
+        """Print data as JSON to stdout."""
+        print(json.dumps(data, indent=2, default=str))
+
+    def format_status_json(
+        self,
+        ssid: str,
+        today_usage: int,
+        total_usage: int,
+        rate_up: float,
+        rate_down: float,
+        limit: int = 0,
+        top_app: str = "",
+        range_label: str = "Today",
+    ) -> dict[str, Any]:
+        """Format status data as JSON-serializable dict."""
+        result = {
+            "ssid": ssid,
+            "range": range_label,
+            "usage_bytes": today_usage,
+            "usage_human": self.format_bytes(today_usage),
+            "total_bytes": total_usage,
+            "total_human": self.format_bytes(total_usage),
+            "rate_up_bytes_per_sec": rate_up,
+            "rate_up_human": self.format_rate(rate_up),
+            "rate_down_bytes_per_sec": rate_down,
+            "rate_down_human": self.format_rate(rate_down),
+        }
+        if limit > 0:
+            result["limit_bytes"] = limit
+            result["limit_human"] = self.format_bytes(limit)
+            result["limit_percent"] = round((today_usage / limit) * 100, 1)
+        if top_app:
+            result["top_app"] = top_app
+        return result
+
+    def format_stats_json(
+        self,
+        usage_data: dict[str, Any],
+        limits_data: dict[str, Any],
+        current_ssid: str | None = None,
+    ) -> dict[str, Any]:
+        """Format detailed stats as JSON-serializable dict."""
+        networks = []
+        for ssid, data in usage_data.items():
+            total = data.get("total_rx", 0) + data.get("total_tx", 0)
+            today = datetime.now().strftime("%Y-%m-%d")
+            daily_data = data.get("daily", {}).get(today, {})
+            today_usage = daily_data.get("rx", 0) + daily_data.get("tx", 0)
+
+            entry = {
+                "ssid": ssid,
+                "total_bytes": total,
+                "total_human": self.format_bytes(total),
+                "today_bytes": today_usage,
+                "today_human": self.format_bytes(today_usage),
+                "total_rx": data.get("total_rx", 0),
+                "total_tx": data.get("total_tx", 0),
+                "connection_count": data.get("connection_count", 0),
+                "first_seen": data.get("first_seen"),
+                "last_seen": data.get("last_seen"),
+                "is_current": ssid == current_ssid,
+            }
+
+            if ssid in limits_data:
+                limit_info = limits_data[ssid]
+                limit_bytes = limit_info.get("limit", 0)
+                if limit_bytes > 0:
+                    interval = limit_info.get("interval", "monthly")
+                    period_usage = self._calculate_period_usage(data, interval)
+                    entry["limit"] = {
+                        "bytes": limit_bytes,
+                        "human": self.format_bytes(limit_bytes),
+                        "interval": interval,
+                        "used_bytes": period_usage,
+                        "used_human": self.format_bytes(period_usage),
+                        "percent": round((period_usage / limit_bytes) * 100, 1),
+                    }
+
+            networks.append(entry)
+
+        return {
+            "networks": networks,
+            "current_ssid": current_ssid,
+            "timestamp": datetime.now().isoformat(),
+        }

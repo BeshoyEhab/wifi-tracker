@@ -8,7 +8,25 @@ function __wifi_tracker_complete
     env COMP_WORDS="$words" wifi-tracker --complete fish "$cword" 2>/dev/null
 end
 
-# Subcommand completions (one per line with descriptions)
+function __wifi_tracker_seen_subcommand
+    set -l cmd (commandline -opc)
+    for sub in $argv
+        if contains -- $sub $cmd
+            return 0
+        end
+    end
+    return 1
+end
+
+function __wifi_tracker_range_values
+    echo -e "1h\n24h\n7d\n30d\n12m"
+end
+
+function __wifi_tracker_networks
+    wifi-tracker --complete fish "" 2>/dev/null
+end
+
+# Subcommand completions
 complete -c wifi-tracker -f -n '__fish_use_subcommand' -a daemon -d 'Start daemon mode'
 complete -c wifi-tracker -f -n '__fish_use_subcommand' -a watch -d 'Live dashboard'
 complete -c wifi-tracker -f -n '__fish_use_subcommand' -a status -d 'Show usage stats'
@@ -36,7 +54,15 @@ complete -c wifi-tracker -f -n '__fish_use_subcommand' -a s -d 'Show stats'
 complete -c wifi-tracker -f -n '__fish_use_subcommand' -a t -d 'Quick status'
 complete -c wifi-tracker -f -n '__fish_use_subcommand' -a g -d 'Usage graph'
 
-# Subcommand args (no descriptions, multiple per line)
+# --range flag values for status, graph, today
+complete -c wifi-tracker -f -n '__wifi_tracker_seen_subcommand status graph today' -l range -a '(__wifi_tracker_range_values)' -d 'Time range'
+complete -c wifi-tracker -f -n '__wifi_tracker_seen_subcommand status' -l all -d 'Show all networks'
+complete -c wifi-tracker -f -n '__wifi_tracker_seen_subcommand status' -l from-date -r -d 'Start date (YYYY-MM-DD)'
+complete -c wifi-tracker -f -n '__wifi_tracker_seen_subcommand status' -l to-date -r -d 'End date (YYYY-MM-DD)'
+complete -c wifi-tracker -f -n '__wifi_tracker_seen_subcommand graph' -l from-date -r -d 'Start date (YYYY-MM-DD)'
+complete -c wifi-tracker -f -n '__wifi_tracker_seen_subcommand graph' -l to-date -r -d 'End date (YYYY-MM-DD)'
+
+# Dynamic completions for subcommands that need network names, app names, etc.
 complete -c wifi-tracker -f -n '__fish_seen_subcommand_from limit' -a '(__wifi_tracker_complete)'
 complete -c wifi-tracker -f -n '__fish_seen_subcommand_from remove-limit' -a '(__wifi_tracker_complete)'
 complete -c wifi-tracker -f -n '__fish_seen_subcommand_from usage-from' -a '(__wifi_tracker_complete)'

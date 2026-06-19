@@ -18,7 +18,37 @@ Thanks for your interest in contributing!
 ## Development Setup
 
 ```bash
-pip install psutil rich pytest ruff
+pip install psutil rich pytest ruff pre-commit
+```
+
+## Pre-commit Hooks
+
+This project uses pre-commit hooks to ensure code quality. Set them up after cloning:
+
+```bash
+pre-commit install
+```
+
+Hooks will run automatically on `git commit`. To run them manually:
+
+```bash
+pre-commit run --all-files
+```
+
+## CI-equivalent Checks (Local)
+
+Run these before pushing to avoid CI failures:
+
+```bash
+# Linting
+ruff check .
+ruff format --check .
+
+# Type checking (optional but recommended)
+mypy wifi_tracker_modules/ --ignore-missing-imports
+
+# Tests
+python -m pytest tests/ -v
 ```
 
 ## Making Changes

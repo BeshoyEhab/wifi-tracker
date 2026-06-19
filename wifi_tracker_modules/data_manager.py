@@ -3,14 +3,16 @@ Data Manager Module for WiFi Tracker
 Handles data persistence, validation, and management
 """
 
-import json
-import shutil
+import contextlib
 import fcntl
+import json
+import os
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from wifi_tracker_modules.config import Config
+from .config import Config
 
 
 class DataManager:
@@ -25,7 +27,7 @@ class DataManager:
     """
 
     def __init__(
-        self, data_file: Optional[str] = None, limits_file: Optional[str] = None
+        self, data_file: str | None = None, limits_file: str | None = None
     ):
         """
         Initialize the Data Manager.
@@ -43,10 +45,10 @@ class DataManager:
         self._check_and_migrate_legacy_data()
 
         # Initialize data structures
-        self.usage_data = {}
-        self.limits_data = {}
-        self._metadata = {}  # Track cleanup and other metadata
-        self._alert_settings = {
+        self.usage_data: dict[str, Any] = {}
+        self.limits_data: dict[str, Any] = {}
+        self._metadata: dict[str, Any] = {}  # Track cleanup and other metadata
+        self._alert_settings: dict[str, Any] = {
             "threshold_bytes": 5 * 1024**3,  # 5GB default
             "window_hours": 1,  # 1 hour default
         }
@@ -78,7 +80,7 @@ class DataManager:
             except Exception as e:
                 print(f"❌ Migration failed: {e}")
 
-    def load_data(self) -> Dict[str, Any]:
+    def load_data(self) -> dict[str, Any]:
         """
         Load usage data from file with validation and migration.
 
@@ -87,7 +89,7 @@ class DataManager:
         """
         try:
             if self.data_file.exists():
-                with open(self.data_file, "r") as f:
+                with open(self.data_file) as f:
                     fcntl.flock(f, fcntl.LOCK_SH)
                     try:
                         data = json.load(f)
@@ -112,7 +114,7 @@ class DataManager:
 
         return self.usage_data
 
-    def load_limits(self) -> Dict[str, Any]:
+    def load_limits(self) -> dict[str, Any]:
         """
         Load limits data from file with file locking.
 
@@ -121,7 +123,7 @@ class DataManager:
         """
         try:
             if self.limits_file.exists():
-                with open(self.limits_file, "r") as f:
+                with open(self.limits_file) as f:
                     fcntl.flock(f, fcntl.LOCK_SH)
                     try:
                         self.limits_data = json.load(f)
@@ -146,20 +148,22 @@ class DataManager:
         try:
             if self.data_file.exists():
                 backup_file = self.data_file.with_suffix(".json.bak")
-                try:
+                with contextlib.suppress(OSError):
                     shutil.copy2(self.data_file, backup_file)
-                except OSError:
-                    pass
 
             data_to_save = self.usage_data.copy()
             data_to_save["_metadata"] = self._metadata
 
-            with open(self.data_file, "w") as f:
+            tmp_file = self.data_file.with_suffix(".json.tmp")
+            with open(tmp_file, "w") as f:
                 fcntl.flock(f, fcntl.LOCK_EX)
                 try:
                     json.dump(data_to_save, f, indent=2, default=str)
+                    f.flush()
+                    os.fsync(f.fileno())
                 finally:
                     fcntl.flock(f, fcntl.LOCK_UN)
+            os.replace(tmp_file, self.data_file)
 
             return True
 
@@ -175,12 +179,16 @@ class DataManager:
             bool: True if save was successful, False otherwise.
         """
         try:
-            with open(self.limits_file, "w") as f:
+            tmp_file = self.limits_file.with_suffix(".json.tmp")
+            with open(tmp_file, "w") as f:
                 fcntl.flock(f, fcntl.LOCK_EX)
                 try:
                     json.dump(self.limits_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
                 finally:
                     fcntl.flock(f, fcntl.LOCK_UN)
+            os.replace(tmp_file, self.limits_file)
             return True
 
         except (PermissionError, OSError) as e:
@@ -196,7 +204,9 @@ class DataManager:
             self._alert_settings["window_hours"] = saved["window_hours"]
 
     def set_alert_settings(
-        self, threshold_bytes: Optional[int] = None, window_hours: Optional[int] = None
+        self,
+        threshold_bytes: int | None = None,
+        window_hours: float | None = None,
     ) -> None:
         """
         Configure high-usage alert threshold and time window.
@@ -212,20 +222,20 @@ class DataManager:
         self._metadata["alert_settings"] = self._alert_settings
         self.save_data()
 
-    def get_alert_settings(self) -> Dict[str, Any]:
+    def get_alert_settings(self) -> dict[str, Any]:
         """Get current alert settings."""
         return self._alert_settings.copy()
 
     # --- Gateway management ---
 
-    def get_known_gateways(self, ssid: str) -> List[Dict[str, Any]]:
+    def get_known_gateways(self, ssid: str) -> list[dict[str, Any]]:
         """Get known safe gateways for an SSID."""
         if ssid not in self.usage_data:
             return []
         return self.usage_data[ssid].get("known_gateways", [])
 
     def is_known_gateway(
-        self, ssid: str, gateway_ip: str, gateway_mac: Optional[str] = None
+        self, ssid: str, gateway_ip: str, gateway_mac: str | None = None
     ) -> bool:
         """Check if a gateway is already marked as safe."""
         known = self.get_known_gateways(ssid)
@@ -240,8 +250,8 @@ class DataManager:
         self,
         ssid: str,
         gateway_ip: str,
-        gateway_mac: Optional[str] = None,
-        vendor: Optional[str] = None,
+        gateway_mac: str | None = None,
+        vendor: str | None = None,
     ) -> None:
         """Mark a gateway as safe for an SSID."""
         if ssid not in self.usage_data:
@@ -282,9 +292,7 @@ class DataManager:
         ssid_data = self.usage_data[ssid]
         if app_name in ssid_data.get("safe_apps", []):
             return True
-        if app_name in ssid_data.get("safe_apps_onetime", []):
-            return True
-        return False
+        return app_name in ssid_data.get("safe_apps_onetime", [])
 
     def consume_safe_onetime(self, ssid: str, app_name: str) -> None:
         """Remove app from one-time safe list after use."""
@@ -322,9 +330,7 @@ class DataManager:
         ssid_data = self.usage_data[ssid]
         if app_name in ssid_data.get("kill_apps", []):
             return True
-        if app_name in ssid_data.get("kill_apps_onetime", []):
-            return True
-        return False
+        return app_name in ssid_data.get("kill_apps_onetime", [])
 
     def consume_kill_onetime(self, ssid: str, app_name: str) -> None:
         """Remove app from one-time kill list after use."""
@@ -369,7 +375,7 @@ class DataManager:
                 continue
         return killed
 
-    def _validate_and_migrate_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_and_migrate_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Validate and migrate data structure for backward compatibility.
 
@@ -447,10 +453,10 @@ class DataManager:
         ssid: str,
         rx_bytes: int,
         tx_bytes: int,
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
         rx_rate: float = 0,
         tx_rate: float = 0,
-        gateway_ip: Optional[str] = None,
+        gateway_ip: str | None = None,
     ) -> None:
         """
         Update usage data for a specific SSID using delta-based tracking.
@@ -499,12 +505,13 @@ class DataManager:
         else:
             # Ensure fields exist (for backward compatibility)
             ssid_data = self.usage_data[ssid]
-            for field, default in [
+            defaults: list[tuple[str, Any]] = [
                 ("peak_rx_rate", 0),
                 ("peak_tx_rate", 0),
                 ("gateway_ip", None),
                 ("app_usage", {}),
-            ]:
+            ]
+            for field, default in defaults:
                 if field not in ssid_data:
                     ssid_data[field] = default
             # Update gateway IP if we have one
@@ -581,7 +588,7 @@ class DataManager:
         minute_key = timestamp.strftime("%H:%M")
         minutely = daily_data.setdefault("minutely", {})
         minutely[minute_key] = minutely.get(minute_key, 0) + rx_delta + tx_delta
-        if len(minutely) > 120:
+        if len(minutely) > Config.MINUTELY_MAX_ENTRIES:
             oldest = min(minutely.keys())
             del minutely[oldest]
 
@@ -639,7 +646,7 @@ class DataManager:
         app_name: str,
         bytes_sent: int,
         bytes_recv: int,
-        timestamp: Optional[datetime] = None,
+        timestamp: datetime | None = None,
         pid: int = 0,
     ) -> None:
         """
@@ -670,10 +677,10 @@ class DataManager:
         app_data = app_usage[app_name]
         entries = app_data["entries"]
         pids = app_data.setdefault("pids", {})
-        cutoff = timestamp - timedelta(days=90)
+        cutoff = timestamp - timedelta(days=Config.CLEANUP_DAYS)
         cutoff_iso = cutoff.isoformat()
 
-        # Remove entries older than 90 days
+        # Remove entries older than cleanup threshold
         entries[:] = [e for e in entries if e.get("ts", "") > cutoff_iso]
 
         # Track delta per PID
@@ -710,7 +717,7 @@ class DataManager:
 
     def get_high_usage_apps(
         self, ssid: str, threshold_bytes: int = 5 * 1024**3, window_hours: int = 1
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get apps that exceed a data usage threshold within a time window.
 
@@ -756,10 +763,10 @@ class DataManager:
     def get_app_usage_range(
         self,
         ssid: str,
-        app_name: Optional[str] = None,
-        start: Optional[datetime] = None,
-        end: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        app_name: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> dict[str, Any]:
         """
         Get app usage entries for any time range.
 
@@ -880,17 +887,21 @@ class DataManager:
         daily = self.usage_data.get(ssid, {}).get("daily", {})
 
         for m in range(months, -1, -1):
-            month_date = now - timedelta(days=m * 30)
-            month_key = month_date.strftime("%Y-%m")
+            year = now.year
+            month = now.month - m
+            while month <= 0:
+                month += 12
+                year -= 1
+            month_key = f"{year}-{month:02d}"
             total = 0
             for day_key, day_data in daily.items():
                 if day_key.startswith(month_key):
                     total += day_data.get("rx", 0) + day_data.get("tx", 0)
-            result.append((month_date.strftime("%Y-%m"), total))
+            result.append((month_key, total))
 
         return result
 
-    def get_networks(self) -> List[Dict[str, Any]]:
+    def get_networks(self) -> list[dict[str, Any]]:
         """Get all saved networks with their gateway IPs and SSIDs."""
         networks = []
         for ssid, data in self.usage_data.items():
@@ -907,7 +918,7 @@ class DataManager:
             )
         return networks
 
-    def get_usage_summary(self, ssid: str = "") -> Dict[str, Any]:
+    def get_usage_summary(self, ssid: str = "") -> dict[str, Any]:
         """
         Get usage summary for specific SSID or all SSIDs.
 
@@ -960,10 +971,10 @@ class DataManager:
 
         removed_count = 0
 
-        for ssid, ssid_data in self.usage_data.items():
+        for _ssid, ssid_data in self.usage_data.items():
             if "daily" in ssid_data:
                 dates_to_remove = []
-                for date in ssid_data["daily"].keys():
+                for date in ssid_data["daily"]:
                     if date < cutoff_str:
                         dates_to_remove.append(date)
 
@@ -1001,10 +1012,10 @@ class DataManager:
                 should_cleanup = True
 
         if should_cleanup:
-            removed_count = self.cleanup_old_data(90)  # Keep 90 days of data
+            removed_count = self.cleanup_old_data(Config.CLEANUP_DAYS)
             if removed_count > 0:
                 print(
-                    f"🧹 Auto-cleanup: Removed {removed_count} old daily records (>90 days)"
+                    f"🧹 Auto-cleanup: Removed {removed_count} old daily records (>{Config.CLEANUP_DAYS} days)"
                 )
                 self.save_data()  # Save after cleanup
 
@@ -1026,7 +1037,7 @@ class DataManager:
         ssid: str,
         limit_bytes: int,
         interval: str = "monthly",
-        usage_from: str = None,
+        usage_from: str | None = None,
     ) -> None:
         """
         Set data limit for specific SSID.
@@ -1057,7 +1068,7 @@ class DataManager:
                 self.limits_data[ssid]["usage_from"] = usage_from
         self.save_limits()
 
-    def get_limit(self, ssid: str) -> Optional[Dict[str, Any]]:
+    def get_limit(self, ssid: str) -> dict[str, Any] | None:
         """
         Get data limit for specific SSID.
 

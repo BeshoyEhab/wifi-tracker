@@ -5,32 +5,37 @@ A comprehensive tool for monitoring WiFi usage with daemon support
 """
 
 import argparse
+import contextlib
+import os
+import shutil
 import sys
 import time
-import shutil
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
+
 import psutil
-from typing import Optional
+
+from . import __version__
 
 try:
-    from .data_manager import DataManager
-    from .display_manager import DisplayManager, RICH_AVAILABLE
-    from .network_monitor import NetworkMonitor
-    from .process_manager import ProcessManager
-    from .notification_manager import notifier, Urgency
     from .alert_manager import AlertManager
     from .app_manager import AppManager
+    from .config import Config
+    from .data_manager import DataManager
+    from .display_manager import RICH_AVAILABLE, DisplayManager
+    from .network_monitor import NetworkMonitor
+    from .notification_manager import Urgency, notifier
+    from .process_manager import ProcessManager
 except ImportError as e:
     try:
-        from wifi_tracker_modules.data_manager import DataManager
-        from wifi_tracker_modules.display_manager import DisplayManager, RICH_AVAILABLE
-        from wifi_tracker_modules.network_monitor import NetworkMonitor
-        from wifi_tracker_modules.process_manager import ProcessManager
-        from wifi_tracker_modules.notification_manager import notifier, Urgency
         from wifi_tracker_modules.alert_manager import AlertManager
         from wifi_tracker_modules.app_manager import AppManager
+        from wifi_tracker_modules.config import Config
+        from wifi_tracker_modules.data_manager import DataManager
+        from wifi_tracker_modules.display_manager import RICH_AVAILABLE, DisplayManager
+        from wifi_tracker_modules.network_monitor import NetworkMonitor
+        from wifi_tracker_modules.notification_manager import Urgency, notifier
+        from wifi_tracker_modules.process_manager import ProcessManager
     except ImportError:
         print(f"Error importing modules: {e}")
         print(
@@ -54,7 +59,7 @@ class WiFiTracker:
         self.interval = interval
         self.running = False
         self.start_time = datetime.now()
-        self.last_ssid = None
+        self.last_ssid: str | None = None
 
         # Initialize modules
         self.monitor = NetworkMonitor(interface, interval)
@@ -81,7 +86,7 @@ class WiFiTracker:
                 print("Tip: Run 'pip install rich' to install it.")
             time.sleep(1)
 
-    def _check_connection_change(self, current_ssid: str) -> None:
+    def _check_connection_change(self, current_ssid: str | None) -> None:
         if current_ssid != self.last_ssid:
             if current_ssid:
                 notifier.send_notification(
@@ -119,10 +124,8 @@ class WiFiTracker:
             if remaining:
                 print(f"⚠️ Warning: {len(remaining)} instance(s) may still be running")
                 for proc in remaining:
-                    try:
+                    with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                         proc.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
                 time.sleep(1)
 
             if self.process_manager.is_daemon_running():
@@ -161,11 +164,11 @@ class WiFiTracker:
 
     def _daemon_monitoring_loop(self) -> None:
         """Main monitoring loop for daemon mode"""
-        save_interval = 0.5
+        save_interval = Config.SAVE_INTERVAL
         last_save_time = time.time()
-        last_app_check_time = 0
-        notified_high_usage = set()
-        known_apps = set()
+        last_app_check_time = 0.0
+        notified_high_usage: set[str] = set()
+        known_apps: set[str] = set()
         last_daily_summary_hour = -1
 
         while self.running:
@@ -204,7 +207,7 @@ class WiFiTracker:
         self._cleanup()
 
     def _monitoring_tick(
-        self, measurement: dict, current_ssid: str, notified_high_usage: set
+        self, measurement: dict | None, current_ssid: str | None, notified_high_usage: set[str]
     ) -> None:
         """Single iteration of the monitoring loop (shared by daemon and watch mode)."""
         self._check_connection_change(current_ssid)
@@ -284,13 +287,13 @@ class WiFiTracker:
 
         self.running = True
         last_save_time = time.time()
-        save_interval = 0.5
+        save_interval = Config.SAVE_INTERVAL
         update_count = 0
-        last_app_check_time = 0
-        notified_high_usage = set()
+        last_app_check_time = 0.0
+        notified_high_usage: set[str] = set()
         current_pid = self.process_manager.get_process_info()["current_pid"]
 
-        context = Live(auto_refresh=False) if RICH_AVAILABLE else open(os.devnull, "w")
+        context = Live(auto_refresh=False) if RICH_AVAILABLE else open(os.devnull, "w")  # noqa: SIM115
 
         try:
             with context as live:
@@ -342,7 +345,7 @@ class WiFiTracker:
                             session_rx,
                             session_tx,
                         )
-                        live.update(layout, refresh=True)
+                        live.update(layout, refresh=True)  # type: ignore[union-attr]
                     else:
                         display_content = self.display_manager.build_watch_display(
                             self.interface,
@@ -375,18 +378,16 @@ class WiFiTracker:
             self.running = False
         finally:
             if not RICH_AVAILABLE:
-                try:
-                    context.close()
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    context.close()  # type: ignore[union-attr]
 
     # Reuse existing methods for stats, cleaning, etc.
     # Note: status_mode and status_all_mode use display_manager.print_detailed_stats which we updated
 
     def status_mode(
         self,
-        custom_start_date: Optional[datetime] = None,
-        custom_end_date: Optional[datetime] = None,
+        custom_start_date: datetime | None = None,
+        custom_end_date: datetime | None = None,
     ) -> None:
         """Show current status and statistics"""
         # Logic remains mostly same, just delegating to improved display manager
@@ -518,31 +519,20 @@ class WiFiTracker:
 
     def set_usage_from(self, ssid: str, date: str):
         """Set custom start date for usage calculation for SSID"""
+        import re
+
         date_lower = date.lower()
 
-        if date_lower.endswith("weeks"):
-            weeks = int(date_lower[:-5])
-            start_date = datetime.now() - timedelta(weeks=weeks)
-            date_str = start_date.strftime("%Y-%m-%d")
-        elif date_lower.endswith("week"):
-            weeks = int(date_lower[:-4])
-            start_date = datetime.now() - timedelta(weeks=weeks)
-            date_str = start_date.strftime("%Y-%m-%d")
-        elif date_lower.endswith("months"):
-            months = int(date_lower[:-6])
-            start_date = datetime.now() - timedelta(days=months * 30)
-            date_str = start_date.strftime("%Y-%m-%d")
-        elif date_lower.endswith("month"):
-            months = int(date_lower[:-5])
-            start_date = datetime.now() - timedelta(days=months * 30)
-            date_str = start_date.strftime("%Y-%m-%d")
-        elif date_lower.endswith("days"):
-            days = int(date_lower[:-4])
-            start_date = datetime.now() - timedelta(days=days)
-            date_str = start_date.strftime("%Y-%m-%d")
-        elif date_lower.endswith("day"):
-            days = int(date_lower[:-3])
-            start_date = datetime.now() - timedelta(days=days)
+        match = re.match(r"^(\d+)\s*(weeks?|months?|days?)$", date_lower)
+        if match:
+            num = int(match.group(1))
+            unit = match.group(2)
+            if unit.startswith("week"):
+                start_date = datetime.now() - timedelta(weeks=num)
+            elif unit.startswith("month"):
+                start_date = datetime.now() - timedelta(days=num * 30)
+            elif unit.startswith("day"):
+                start_date = datetime.now() - timedelta(days=num)
             date_str = start_date.strftime("%Y-%m-%d")
         else:
             try:
@@ -587,11 +577,9 @@ class WiFiTracker:
             return
 
         if RICH_AVAILABLE:
-            from rich.table import Table
-            from rich.console import Console
             from rich.box import ROUNDED
+            from rich.table import Table
 
-            console = Console()
             table = Table(title="Saved Networks", box=ROUNDED, expand=True)
             table.add_column("SSID", style="bold cyan")
             table.add_column("Gateway IP", style="yellow")
@@ -610,7 +598,7 @@ class WiFiTracker:
                     net["ssid"], gw, self.display_manager.format_bytes(total), last
                 )
 
-            console.print(table)
+            self.display_manager.console.print(table)
         else:
             for net in networks:
                 total = net["total_rx"] + net["total_tx"]
@@ -726,6 +714,16 @@ def main():
     wifi-tracker mark-safe HomeWiFi firefox --always  Always allow firefox
     wifi-tracker today                          Quick status check
 """,
+    )
+
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true", help="Suppress desktop notifications"
+    )
+    parser.add_argument(
+        "--json", "-j", action="store_true", help="Output in JSON format (for status/today)"
     )
 
     # Global options
@@ -852,6 +850,10 @@ def main():
         parser.print_help()
         sys.exit(0)
 
+    # Apply quiet flag to suppress notifications
+    if args.quiet:
+        notifier.quiet = True
+
     # Resolve aliases
     command = args.command
     if command in ("d",):
@@ -884,18 +886,29 @@ def main():
                 custom_end_date = datetime.now()
             if not custom_start_date and not custom_end_date:
                 range_str = getattr(args, "range_str", "24h")
-                range_days = {"1h": 0, "24h": 1, "7d": 7, "30d": 30, "12m": 365}
-                days = range_days.get(range_str, 1)
-                if days > 0:
+                if range_str == "1h":
+                    custom_start_date = datetime.now() - timedelta(hours=1)
+                    custom_end_date = datetime.now()
+                else:
+                    range_days = {"24h": 1, "7d": 7, "30d": 30, "12m": 365}
+                    days = range_days.get(range_str, 1)
                     custom_start_date = datetime.now() - timedelta(days=days)
                     custom_end_date = datetime.now()
             if args.all:
-                tracker.display_manager.print_detailed_stats(
-                    tracker.data_manager.usage_data,
-                    tracker.data_manager.limits_data,
-                    custom_start_date=custom_start_date,
-                    custom_end_date=custom_end_date,
-                )
+                if args.json:
+                    stats_data = tracker.display_manager.format_stats_json(
+                        tracker.data_manager.usage_data,
+                        tracker.data_manager.limits_data,
+                        tracker.monitor.get_current_ssid(),
+                    )
+                    tracker.display_manager.output_json(stats_data)
+                else:
+                    tracker.display_manager.print_detailed_stats(
+                        tracker.data_manager.usage_data,
+                        tracker.data_manager.limits_data,
+                        custom_start_date=custom_start_date,
+                        custom_end_date=custom_end_date,
+                    )
             else:
                 tracker.status_mode(custom_start_date, custom_end_date)
         elif command == "top-apps":
@@ -1040,25 +1053,38 @@ def main():
                     "12m": "Last 12m",
                 }
                 range_label = range_labels.get(range_str, "Today")
-                tracker.display_manager.print_quick_status(
-                    current_ssid,
-                    range_usage,
-                    total,
-                    rate_up,
-                    rate_down,
-                    limit,
-                    top_app,
-                    range_label,
-                )
-                if not tracker.process_manager.is_daemon_running():
-                    if tracker.display_manager.console:
-                        tracker.display_manager.console.print(
-                            "  [yellow]⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon[/]"
-                        )
-                    else:
-                        print(
-                            "  ⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon"
-                        )
+                if args.json:
+                    status_data = tracker.display_manager.format_status_json(
+                        current_ssid,
+                        range_usage,
+                        total,
+                        rate_up,
+                        rate_down,
+                        limit,
+                        top_app,
+                        range_label,
+                    )
+                    tracker.display_manager.output_json(status_data)
+                else:
+                    tracker.display_manager.print_quick_status(
+                        current_ssid,
+                        range_usage,
+                        total,
+                        rate_up,
+                        rate_down,
+                        limit,
+                        top_app,
+                        range_label,
+                    )
+                    if not tracker.process_manager.is_daemon_running():
+                        if tracker.display_manager.console:
+                            tracker.display_manager.console.print(
+                                "  [yellow]⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon[/]"
+                            )
+                        else:
+                            print(
+                                "  ⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon"
+                            )
         elif command == "graph":
             target_ssid = getattr(args, "ssid", None)
             if not target_ssid:
@@ -1133,7 +1159,20 @@ def _handle_completion(shell: str, comp_word: str) -> None:
 
     suggestions = []
 
-    if argc == 0:
+    # If cur starts with --, suggest flags for the current command
+    if cur.startswith("--") or cur.startswith("-"):
+        flag_map = {
+            "status": ["--all", "--from-date", "--to-date", "--range"],
+            "graph": ["--range", "--from-date", "--to-date"],
+            "today": ["--range"],
+            "daemon": ["--interface", "--interval"],
+            "watch": ["--interface", "--interval"],
+        }
+        flags = flag_map.get(cmd, [])
+        for f in flags:
+            if f.startswith(cur):
+                suggestions.append(f)
+    elif argc == 0:
         # No subcommand: show commands only
         all_cmds = [
             "daemon",
@@ -1173,7 +1212,7 @@ def _handle_completion(shell: str, comp_word: str) -> None:
         for net in networks:
             if net.lower().startswith(cur):
                 suggestions.append(net)
-    elif argc == 1 and cmd in ("safe-apps", "kill-list", "trusted-gateways", "graph"):
+    elif argc == 1 and cmd in ("safe-apps", "kill-list", "trusted-gateways"):
         # Optional SSID
         for net in networks:
             if net.lower().startswith(cur):

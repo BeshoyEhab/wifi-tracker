@@ -3,8 +3,8 @@ Notification Manager Module for WiFi Tracker
 Handles system notifications using notify-send.sh, zenity, or plain notify-send
 """
 
-import subprocess
 import shutil
+import subprocess
 import time
 from enum import Enum
 
@@ -20,6 +20,7 @@ class NotificationManager:
 
     def __init__(self):
         self._check_dependency()
+        self.quiet = False
 
     def _check_dependency(self):
         """Check available notification tools"""
@@ -31,6 +32,8 @@ class NotificationManager:
         self, title: str, message: str, urgency: Urgency = Urgency.NORMAL
     ) -> bool:
         """Send a plain desktop notification (no buttons)."""
+        if self.quiet:
+            return False
         if not self.notify_send:
             return False
         try:
@@ -132,10 +135,12 @@ class NotificationManager:
         Ask user whether to trust an unknown gateway.
         Returns: "trust", "block", or "ignored"
         """
+        if self.quiet:
+            return "ignored"
         mac_info = f"\nMAC: {mac}" if mac else ""
         vendor_info = f"\nVendor: {vendor}" if vendor else ""
         body = f"New gateway on {ssid}:\nIP: {gateway_ip}{mac_info}{vendor_info}"
-        trust_cmd = f"wifi-tracker trust-gateway {ssid} {gateway_ip}"
+        trust_cmd = f'wifi-tracker trust-gateway "{ssid}" {gateway_ip}'
 
         # Use notify-send.sh (preferred) or zenity, never both
         if self.notify_send_sh:
@@ -181,6 +186,8 @@ class NotificationManager:
         Ask user what to do about a high-usage app.
         Returns: "safe_once", "safe_always", "kill_once", "kill_always", or "ignored"
         """
+        if self.quiet:
+            return "ignored"
         body = f"{app_name} used {size} in {window}!"
         safe_once_cmd = f"wifi-tracker mark-safe {ssid} {app_name}"
         safe_always_cmd = f"wifi-tracker mark-safe {ssid} {app_name} --always"

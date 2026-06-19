@@ -21,12 +21,26 @@
 - [ ] Unit tests for `display_manager.py` (formatting, graph)
 - [ ] Unit tests for `process_manager.py` (daemon, PID)
 - [ ] Unit tests for `notification_manager.py`
+- [ ] Unit tests for `alert_manager.py` (limit checking, size parsing)
+- [ ] Unit tests for `app_manager.py` (app detection, tracking)
 - [ ] Unit tests for `config.py` (XDG paths)
 - [ ] Integration test: full daemon cycle (start → collect → stop)
-- [ ] Add `--json` flag for machine-readable output
-- [ ] Add `--quiet` flag to suppress notifications
-- [ ] Add `--version` flag
+- [x] Add `--json` flag for machine-readable output
+- [x] Add `--quiet` flag to suppress notifications
+- [x] Add `--version` flag
 - [ ] Publish to PyPI
+
+## v0.2.0 — Code Quality & Project Hygiene
+- [x] Add ruff config to `pyproject.toml` — rules, exclusions, line length, per-file overrides
+- [x] Add pytest config to `pyproject.toml` — test path, markers, options
+- [x] Add `tests/__init__.py` — proper package recognition
+- [x] Add `conftest.py` — shared fixtures (temp dirs, mock data, mock interfaces)
+- [x] Add `py.typed` marker — PEP 561 compliance for type checkers
+- [x] Add mypy/pyright config to `pyproject.toml` — enforce type correctness
+- [x] Add `SECURITY.md` — vulnerability reporting policy (critical: project has MITM/rogue detection features)
+- [x] Add `.editorconfig` — cross-editor consistency
+- [x] Fix duplicate entries in `.gitignore` (lines 1-3 and 33-35 are identical)
+- [x] Add CONTRIBUTING.md guidance on running pre-commit hooks and CI-equivalent checks locally
 
 ## v0.3.0 — User-Requested Features
 Based on GitHub issues and community feedback. Possible additions:

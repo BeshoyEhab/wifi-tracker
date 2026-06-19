@@ -4,9 +4,8 @@ Handles data limit checking, high-usage alerts, and daily summaries.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
 
-from .notification_manager import notifier, Urgency
+from .notification_manager import Urgency, notifier
 
 
 class AlertManager:
@@ -83,7 +82,7 @@ class AlertManager:
             pass
 
     @staticmethod
-    def parse_size(size_str: str) -> Optional[int]:
+    def parse_size(size_str: str) -> int | None:
         """Parse a size string like '1GB', '500M', '1T' into bytes.
 
         Accepts: TB/T, GB/G, MB/M, KB/K, B, or raw bytes.
@@ -110,7 +109,7 @@ class AlertManager:
             return None
 
     @staticmethod
-    def parse_window(window_str: str) -> Optional[float]:
+    def parse_window(window_str: str) -> float | None:
         """Parse a window string like '1h', '30m', '2d' into hours.
 
         Accepts: d (days), h (hours), m (minutes), or raw hours.

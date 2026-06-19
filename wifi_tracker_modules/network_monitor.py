@@ -3,20 +3,20 @@ Network Monitor Module for WiFi Tracker
 Handles network interface monitoring and data collection
 """
 
-import subprocess
 import re
+import subprocess
 import time
 from datetime import datetime
-from typing import Dict, Optional, Tuple, Any
+from typing import Any
 
 
 class NetworkMonitor:
     """Monitors network interfaces and collects usage statistics"""
 
-    def __init__(self, interface: str = None, interval: float = 0.5):
+    def __init__(self, interface: str | None = None, interval: float = 0.5):
         self.interface = interface or self.detect_wireless_interface()
         self.interval = interval
-        self.last_measurement = None
+        self.last_measurement: dict[str, Any] | None = None
         self.start_time = time.time()
 
     def detect_wireless_interface(self) -> str:
@@ -47,15 +47,15 @@ class NetworkMonitor:
     def _interface_exists(self, interface: str) -> bool:
         """Check if network interface exists"""
         try:
-            with open(f"/sys/class/net/{interface}/operstate", "r") as _:
+            with open(f"/sys/class/net/{interface}/operstate") as _:
                 return True
         except FileNotFoundError:
             return False
 
-    def get_interface_stats(self) -> Optional[Dict[str, int]]:
+    def get_interface_stats(self) -> dict[str, int] | None:
         """Get current interface statistics"""
         try:
-            with open("/proc/net/dev", "r") as f:
+            with open("/proc/net/dev") as f:
                 for line in f:
                     if self.interface in line:
                         parts = line.split()
@@ -69,7 +69,7 @@ class NetworkMonitor:
             pass
         return None
 
-    def get_current_ssid(self) -> Optional[str]:
+    def get_current_ssid(self) -> str | None:
         """Get currently connected WiFi SSID"""
         try:
             result = subprocess.run(
@@ -121,7 +121,7 @@ class NetworkMonitor:
 
         return None
 
-    def get_signal_quality(self) -> Dict[str, Any]:
+    def get_signal_quality(self) -> dict[str, Any]:
         """
         Get WiFi signal quality information.
 
@@ -166,7 +166,7 @@ class NetworkMonitor:
 
         return quality_info
 
-    def calculate_rates(self, current_stats: Dict[str, int]) -> Tuple[float, float]:
+    def calculate_rates(self, current_stats: dict[str, int]) -> tuple[float, float]:
         """
         Calculate download and upload rates based on previous measurement.
 
@@ -199,7 +199,7 @@ class NetworkMonitor:
 
         return rx_rate, tx_rate
 
-    def get_measurement(self) -> Optional[Dict[str, Any]]:
+    def get_measurement(self) -> dict[str, Any] | None:
         """
         Get complete network measurement including stats, SSID, and rates.
 
@@ -232,10 +232,10 @@ class NetworkMonitor:
             "vendor": vendor,
         }
 
-    def get_gateway_ip(self) -> Optional[str]:
+    def get_gateway_ip(self) -> str | None:
         """Get the default gateway IP address for the current interface."""
         try:
-            with open("/proc/net/route", "r") as f:
+            with open("/proc/net/route") as f:
                 for line in f:
                     parts = line.strip().split()
                     if (
@@ -273,7 +273,7 @@ class NetworkMonitor:
 
         return None
 
-    def get_gateway_mac(self, gateway_ip: Optional[str] = None) -> Optional[str]:
+    def get_gateway_mac(self, gateway_ip: str | None = None) -> str | None:
         """Get the MAC address of the gateway from the ARP table."""
         if not gateway_ip:
             gateway_ip = self.get_gateway_ip()
@@ -281,7 +281,7 @@ class NetworkMonitor:
             return None
 
         try:
-            with open("/proc/net/arp", "r") as f:
+            with open("/proc/net/arp") as f:
                 for line in f:
                     parts = line.strip().split()
                     if len(parts) >= 4 and parts[0] == gateway_ip:
@@ -298,7 +298,7 @@ class NetworkMonitor:
                 capture_output=True,
                 timeout=3,
             )
-            with open("/proc/net/arp", "r") as f:
+            with open("/proc/net/arp") as f:
                 for line in f:
                     parts = line.strip().split()
                     if len(parts) >= 4 and parts[0] == gateway_ip:
@@ -314,7 +314,7 @@ class NetworkMonitor:
 
         return None
 
-    def get_vendor_from_mac(self, mac: Optional[str]) -> Optional[str]:
+    def get_vendor_from_mac(self, mac: str | None) -> str | None:
         """Look up the hardware vendor from the MAC address OUI prefix."""
         if not mac:
             return None

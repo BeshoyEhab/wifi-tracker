@@ -1,13 +1,12 @@
-import unittest
-import shutil
 import json
-import tempfile
-from pathlib import Path
-
+import shutil
 
 # Import modules to test
 # We need to add project root to path relative to tests/
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 

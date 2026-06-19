@@ -487,75 +487,28 @@ WantedBy=default.target
                 ):
                     continue
 
-            # Read /proc/{pid}/io for I/O bytes
+            # Read /proc/{pid}/io and compute network I/O approximation.
+            # rchar/wchar include all I/O (disk + network + pipes + terminal).
+            # read_bytes/write_bytes are storage-only.
+            # Subtracting gives us an approximation of non-storage I/O (mostly network).
             for pid, data in processes.items():
                 try:
                     io_path = f"/proc/{pid}/io"
                     with open(io_path) as f:
+                        fields = {}
                         for line in f:
-                            if line.startswith("rchar:"):
-                                data["bytes_recv"] = int(line.split(":")[1].strip())
-                            elif line.startswith("wchar:"):
-                                data["bytes_sent"] = int(line.split(":")[1].strip())
+                            if ":" in line:
+                                key, val = line.split(":", 1)
+                                fields[key.strip()] = int(val.strip())
+                        rchar = fields.get("rchar", 0)
+                        wchar = fields.get("wchar", 0)
+                        read_bytes = fields.get("read_bytes", 0)
+                        write_bytes = fields.get("write_bytes", 0)
+                        data["bytes_recv"] = max(0, rchar - read_bytes)
+                        data["bytes_sent"] = max(0, wchar - write_bytes)
                     data["total_bytes"] = data["bytes_sent"] + data["bytes_recv"]
                 except (FileNotFoundError, PermissionError, ValueError):
                     data["total_bytes"] = 0
-
-            # Merge with saved app_usage from data file
-            # Only sum entries from today to avoid inflating usage across day boundaries
-            saved_apps = {}
-            if ssid:
-                try:
-                    from datetime import datetime
-
-                    from .data_manager import DataManager
-
-                    dm = DataManager()
-                    app_usage = dm.usage_data.get(ssid, {}).get("app_usage", {})
-                    now = datetime.now()
-                    today_start = now.replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    ).isoformat()
-                    for app_name, data in app_usage.items():
-                        entries = data.get("entries", [])
-                        total_sent = sum(
-                            e.get("sent", 0)
-                            for e in entries
-                            if e.get("ts", "") >= today_start
-                        )
-                        total_recv = sum(
-                            e.get("recv", 0)
-                            for e in entries
-                            if e.get("ts", "") >= today_start
-                        )
-                        total = total_sent + total_recv
-                        if total > 0:
-                            saved_apps[app_name] = {
-                                "name": app_name,
-                                "bytes_sent": total_sent,
-                                "bytes_recv": total_recv,
-                                "total_bytes": total,
-                                "connections": 0,
-                                "user": "-",
-                                "parent": app_name,
-                            }
-                except Exception:
-                    pass
-
-            # Build active app names set (by name, not pid)
-            active_names = {d["name"] for d in processes.values()}
-
-            # Add saved apps that aren't currently active
-            for app_name, app_data in saved_apps.items():
-                if app_name not in active_names:
-                    # Try to find the PID if the process is running
-                    for pid, pdata in processes.items():
-                        if pdata["name"] == app_name:
-                            app_data["pid"] = pid
-                            app_data["connections"] = pdata["connections"]
-                            app_data["user"] = pdata["user"]
-                            break
-                    processes[app_data.get("pid", 0)] = app_data
 
             # Convert to list and sort by total bytes (descending)
             sorted_apps = sorted(

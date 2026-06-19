@@ -11,6 +11,10 @@ class Config:
     """Central configuration for file paths and settings"""
 
     APP_NAME = "wifi-tracker"
+    SAVE_INTERVAL = 0.5
+    CLEANUP_DAYS = 90
+    MINUTELY_MAX_ENTRIES = 120
+    NEW_APP_THRESHOLD = 5
 
     @staticmethod
     def get_data_dir() -> Path:
@@ -19,10 +23,7 @@ class Config:
         Default: ~/.local/share/wifi-tracker
         """
         xdg_data = os.environ.get("XDG_DATA_HOME")
-        if xdg_data:
-            base = Path(xdg_data)
-        else:
-            base = Path.home() / ".local" / "share"
+        base = Path(xdg_data) if xdg_data else Path.home() / ".local" / "share"
 
         path = base / Config.APP_NAME
         path.mkdir(parents=True, exist_ok=True)
@@ -35,10 +36,7 @@ class Config:
         Default: ~/.cache/wifi-tracker
         """
         xdg_cache = os.environ.get("XDG_CACHE_HOME")
-        if xdg_cache:
-            base = Path(xdg_cache)
-        else:
-            base = Path.home() / ".cache"
+        base = Path(xdg_cache) if xdg_cache else Path.home() / ".cache"
 
         path = base / Config.APP_NAME
         path.mkdir(parents=True, exist_ok=True)
@@ -51,10 +49,7 @@ class Config:
         Default: ~/.config/wifi-tracker
         """
         xdg_config = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config:
-            base = Path(xdg_config)
-        else:
-            base = Path.home() / ".config"
+        base = Path(xdg_config) if xdg_config else Path.home() / ".config"
 
         path = base / Config.APP_NAME
         path.mkdir(parents=True, exist_ok=True)
