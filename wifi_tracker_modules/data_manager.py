@@ -237,14 +237,9 @@ class DataManager:
     def is_known_gateway(
         self, ssid: str, gateway_ip: str, gateway_mac: str | None = None
     ) -> bool:
-        """Check if a gateway is already marked as safe."""
+        """Check if a gateway is already marked as safe (match by IP)."""
         known = self.get_known_gateways(ssid)
-        for gw in known:
-            if gw.get("ip") == gateway_ip:
-                if gateway_mac and gw.get("mac"):
-                    return gw["mac"] == gateway_mac
-                return True
-        return False
+        return any(gw.get("ip") == gateway_ip for gw in known)
 
     def add_known_gateway(
         self,
@@ -294,12 +289,7 @@ class DataManager:
     ) -> bool:
         """Check if a gateway is blocked (notifications suppressed)."""
         blocked = self.get_blocked_gateways(ssid)
-        for gw in blocked:
-            if gw.get("ip") == gateway_ip:
-                if gateway_mac and gw.get("mac"):
-                    return gw["mac"] == gateway_mac
-                return True
-        return False
+        return any(gw.get("ip") == gateway_ip for gw in blocked)
 
     def add_blocked_gateway(
         self,

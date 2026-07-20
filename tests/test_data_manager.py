@@ -154,7 +154,7 @@ class TestDataManager(unittest.TestCase):
 
         self.assertTrue(self.data_manager.is_blocked_gateway(ssid, ip, mac))
         self.assertTrue(self.data_manager.is_blocked_gateway(ssid, ip))
-        self.assertFalse(self.data_manager.is_blocked_gateway(ssid, ip, "XX:YY:ZZ"))
+        self.assertTrue(self.data_manager.is_blocked_gateway(ssid, ip, "XX:YY:ZZ"))
 
     def test_blocked_gateway_no_duplicates(self):
         """Test that adding the same blocked gateway twice doesn't duplicate"""
