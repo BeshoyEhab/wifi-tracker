@@ -283,6 +283,60 @@ class DataManager:
                 return True
         return False
 
+    def get_blocked_gateways(self, ssid: str) -> list[dict[str, Any]]:
+        """Get blocked gateways for an SSID."""
+        if ssid not in self.usage_data:
+            return []
+        return self.usage_data[ssid].get("blocked_gateways", [])
+
+    def is_blocked_gateway(
+        self, ssid: str, gateway_ip: str, gateway_mac: str | None = None
+    ) -> bool:
+        """Check if a gateway is blocked (notifications suppressed)."""
+        blocked = self.get_blocked_gateways(ssid)
+        for gw in blocked:
+            if gw.get("ip") == gateway_ip:
+                if gateway_mac and gw.get("mac"):
+                    return gw["mac"] == gateway_mac
+                return True
+        return False
+
+    def add_blocked_gateway(
+        self,
+        ssid: str,
+        gateway_ip: str,
+        gateway_mac: str | None = None,
+        vendor: str | None = None,
+    ) -> None:
+        """Block a gateway (suppress notifications for it)."""
+        if ssid not in self.usage_data:
+            self.usage_data[ssid] = {}
+        gateways = self.usage_data[ssid].setdefault("blocked_gateways", [])
+        for gw in gateways:
+            if gw.get("ip") == gateway_ip:
+                return
+        gateways.append(
+            {
+                "ip": gateway_ip,
+                "mac": gateway_mac,
+                "vendor": vendor,
+                "added": datetime.now().isoformat(),
+            }
+        )
+        self.save_data()
+
+    def remove_blocked_gateway(self, ssid: str, gateway_ip: str) -> bool:
+        """Remove a gateway from the blocked list."""
+        if ssid not in self.usage_data:
+            return False
+        gateways = self.usage_data[ssid].get("blocked_gateways", [])
+        for i, gw in enumerate(gateways):
+            if gw.get("ip") == gateway_ip:
+                gateways.pop(i)
+                self.save_data()
+                return True
+        return False
+
     # --- App safe-list and kill-list ---
 
     def is_safe_app(self, ssid: str, app_name: str) -> bool:
@@ -409,6 +463,7 @@ class DataManager:
                 "gateway_ip": ssid_data.get("gateway_ip"),
                 "app_usage": ssid_data.get("app_usage", {}),
                 "known_gateways": ssid_data.get("known_gateways", []),
+                "blocked_gateways": ssid_data.get("blocked_gateways", []),
                 "safe_apps": ssid_data.get("safe_apps", []),
                 "safe_apps_onetime": ssid_data.get("safe_apps_onetime", []),
                 "kill_apps": ssid_data.get("kill_apps", []),

@@ -140,6 +140,84 @@ class TestDataManager(unittest.TestCase):
         self.assertGreater(len(result), 0)
         self.assertEqual(result[0][1], 0)
 
+    def test_blocked_gateways_empty_by_default(self):
+        """Test that blocked gateways list is empty for new SSID"""
+        self.assertEqual(self.data_manager.get_blocked_gateways("TestWiFi"), [])
+
+    def test_add_and_check_blocked_gateway(self):
+        """Test adding and checking a blocked gateway"""
+        ssid = "TestWiFi"
+        ip = "192.168.1.1"
+        mac = "AA:BB:CC:DD:EE:FF"
+
+        self.data_manager.add_blocked_gateway(ssid, ip, mac, "TP-Link")
+
+        self.assertTrue(self.data_manager.is_blocked_gateway(ssid, ip, mac))
+        self.assertTrue(self.data_manager.is_blocked_gateway(ssid, ip))
+        self.assertFalse(self.data_manager.is_blocked_gateway(ssid, ip, "XX:YY:ZZ"))
+
+    def test_blocked_gateway_no_duplicates(self):
+        """Test that adding the same blocked gateway twice doesn't duplicate"""
+        ssid = "TestWiFi"
+        ip = "192.168.1.1"
+
+        self.data_manager.add_blocked_gateway(ssid, ip, "AA:BB:CC:DD:EE:FF")
+        self.data_manager.add_blocked_gateway(ssid, ip, "AA:BB:CC:DD:EE:FF")
+
+        blocked = self.data_manager.get_blocked_gateways(ssid)
+        self.assertEqual(len(blocked), 1)
+
+    def test_remove_blocked_gateway(self):
+        """Test removing a blocked gateway"""
+        ssid = "TestWiFi"
+        ip = "192.168.1.1"
+
+        self.data_manager.add_blocked_gateway(ssid, ip, "AA:BB:CC:DD:EE:FF")
+        self.assertTrue(self.data_manager.remove_blocked_gateway(ssid, ip))
+
+        self.assertFalse(self.data_manager.is_blocked_gateway(ssid, ip))
+        self.assertEqual(len(self.data_manager.get_blocked_gateways(ssid)), 0)
+
+    def test_remove_blocked_gateway_not_found(self):
+        """Test removing a non-existent blocked gateway returns False"""
+        result = self.data_manager.remove_blocked_gateway("TestWiFi", "10.0.0.1")
+        self.assertFalse(result)
+
+    def test_remove_known_gateway(self):
+        """Test removing a trusted gateway"""
+        ssid = "TestWiFi"
+        ip = "192.168.1.1"
+
+        self.data_manager.add_known_gateway(ssid, ip, "AA:BB:CC:DD:EE:FF")
+        self.assertTrue(self.data_manager.remove_known_gateway(ssid, ip))
+
+        self.assertFalse(self.data_manager.is_known_gateway(ssid, ip))
+
+    def test_blocked_gateway_persists_to_disk(self):
+        """Test that blocked gateways are saved and loaded from disk"""
+        ssid = "TestWiFi"
+        ip = "192.168.1.1"
+
+        self.data_manager.add_blocked_gateway(ssid, ip, "AA:BB:CC:DD:EE:FF", "Router")
+        self.data_manager.save_data()
+
+        new_manager = DataManager(str(self.data_file))
+        new_manager.load_data()
+
+        self.assertTrue(new_manager.is_blocked_gateway(ssid, ip))
+
+    def test_known_and_blocked_independent(self):
+        """Test that known and blocked gateway lists are independent"""
+        ssid = "TestWiFi"
+
+        self.data_manager.add_known_gateway(ssid, "192.168.1.1", "AA:BB:CC:DD:EE:FF")
+        self.data_manager.add_blocked_gateway(ssid, "192.168.1.2", "11:22:33:44:55:66")
+
+        self.assertTrue(self.data_manager.is_known_gateway(ssid, "192.168.1.1"))
+        self.assertFalse(self.data_manager.is_known_gateway(ssid, "192.168.1.2"))
+        self.assertTrue(self.data_manager.is_blocked_gateway(ssid, "192.168.1.2"))
+        self.assertFalse(self.data_manager.is_blocked_gateway(ssid, "192.168.1.1"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -141,12 +141,13 @@ class NotificationManager:
         vendor_info = f"\nVendor: {vendor}" if vendor else ""
         body = f"New gateway on {ssid}:\nIP: {gateway_ip}{mac_info}{vendor_info}"
         trust_cmd = f'wifi-tracker trust-gateway "{ssid}" {gateway_ip}'
+        block_cmd = f'wifi-tracker block-gateway "{ssid}" {gateway_ip}'
 
         # Use notify-send.sh (preferred) or zenity, never both
         if self.notify_send_sh:
             actions = {
                 "Trust": trust_cmd,
-                "Block": "true",
+                "Block": block_cmd,
             }
             choice = self._ask_with_notify_send_sh(
                 "Unknown Gateway Detected", body, actions, timeout=60
@@ -159,7 +160,7 @@ class NotificationManager:
 
         if self.zenity:
             options = [
-                ("TRUE", "trust", "Trust Once"),
+                ("TRUE", "trust", "Trust"),
                 ("FALSE", "block", "Block"),
             ]
             choice = self._ask_with_zenity(
@@ -184,31 +185,25 @@ class NotificationManager:
     ) -> str:
         """
         Ask user what to do about a high-usage app.
-        Returns: "safe_once", "safe_always", "kill_once", "kill_always", or "ignored"
+        Returns: "safe_always", "kill_always", or "ignored"
         """
         if self.quiet:
             return "ignored"
         body = f"{app_name} used {size} in {window}!"
-        safe_once_cmd = f"wifi-tracker mark-safe {ssid} {app_name}"
         safe_always_cmd = f"wifi-tracker mark-safe {ssid} {app_name} --always"
-        kill_once_cmd = f"wifi-tracker kill-app {ssid} {app_name}"
         kill_always_cmd = f"wifi-tracker kill-app {ssid} {app_name} --always"
 
         # Use notify-send.sh (preferred) or zenity, never both
         if self.notify_send_sh:
             actions = {
-                "Safe once": safe_once_cmd,
                 "Safe always": safe_always_cmd,
-                "Kill once": kill_once_cmd,
                 "Kill always": kill_always_cmd,
             }
             choice = self._ask_with_notify_send_sh(
                 "High Data Usage Alert", body, actions, timeout=60
             )
             mapping = {
-                "Safe once": "safe_once",
                 "Safe always": "safe_always",
-                "Kill once": "kill_once",
                 "Kill always": "kill_always",
             }
             if choice in mapping:
@@ -217,22 +212,20 @@ class NotificationManager:
 
         if self.zenity:
             options = [
-                ("TRUE", "safe_once", "Mark safe (once)"),
-                ("FALSE", "safe_always", "Mark safe (always)"),
-                ("FALSE", "kill_once", "Kill now (once)"),
-                ("FALSE", "kill_always", "Kill now (always)"),
+                ("TRUE", "safe_always", "Mark safe"),
+                ("FALSE", "kill_always", "Kill now"),
             ]
             choice = self._ask_with_zenity(
                 "High Data Usage Alert", body, options, timeout=60
             )
-            if choice in ("safe_once", "safe_always", "kill_once", "kill_always"):
+            if choice in ("safe_always", "kill_always"):
                 return choice
             return "ignored"
 
         # Fallback: plain notification
         self.send_notification(
             "High Data Usage Alert",
-            f"{body}\nSafe: {safe_once_cmd}\nKill: {kill_once_cmd}",
+            f"{body}\nSafe: {safe_always_cmd}\nKill: {kill_always_cmd}",
             Urgency.CRITICAL,
         )
         return "ignored"

@@ -60,6 +60,7 @@ class WiFiTracker:
         self.running = False
         self.start_time = datetime.now()
         self.last_ssid: str | None = None
+        self._gateway_prompted_at: dict[tuple[str, str], float] = {}
 
         # Initialize modules
         self.monitor = NetworkMonitor(interface, interval)
@@ -257,17 +258,32 @@ class WiFiTracker:
         if self.data_manager.is_known_gateway(ssid, gateway_ip, gateway_mac):
             return
 
+        # Skip if blocked (notifications suppressed)
+        if self.data_manager.is_blocked_gateway(ssid, gateway_ip, gateway_mac):
+            return
+
+        # Cooldown: don't re-prompt for the same gateway within 60 seconds
+        key = (ssid, gateway_ip)
+        now = time.time()
+        last_prompted = self._gateway_prompted_at.get(key, 0)
+        if now - last_prompted < 60:
+            return
+        self._gateway_prompted_at[key] = now
+
         # Unknown gateway - ask user
         choice = notifier.ask_gateway_trust(
             ssid, gateway_ip, gateway_mac or "", vendor or ""
         )
 
-        if choice == "trust":
+        if choice.lower() == "trust":
             self.data_manager.add_known_gateway(ssid, gateway_ip, gateway_mac, vendor)
             self._log_info(
                 f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}"
             )
-        elif choice == "block":
+        elif choice.lower() == "block":
+            self.data_manager.add_blocked_gateway(
+                ssid, gateway_ip, gateway_mac, vendor
+            )
             self._log_info(
                 f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}"
             )
@@ -685,6 +701,10 @@ def main():
   SECURITY
     trust-gateway       Trust a gateway (MITM protection)
     trusted-gateways    List trusted gateways
+    block-gateway       Block a gateway (suppress notifications)
+    blocked-gateways    List blocked gateways
+    unblock-gateway     Unblock a gateway
+    untrust-gateway     Remove a trusted gateway
     mark-safe           Mark app as safe (won't alert/kill)
     safe-apps           List trusted apps
     kill-app            Kill app or auto-kill on limit
@@ -808,6 +828,30 @@ def main():
         "trusted-gateways", help="List trusted gateways"
     )
     trusted_gw_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
+
+    block_gw_p = subparsers.add_parser(
+        "block-gateway", help="Block a gateway (suppress notifications)"
+    )
+    block_gw_p.add_argument("ssid", help="Network SSID")
+    block_gw_p.add_argument("gateway_ip", help="Gateway IP address")
+    block_gw_p.add_argument("--mac", help="Gateway MAC address (optional)")
+
+    unblock_gw_p = subparsers.add_parser(
+        "unblock-gateway", help="Unblock a gateway"
+    )
+    unblock_gw_p.add_argument("ssid", help="Network SSID")
+    unblock_gw_p.add_argument("gateway_ip", help="Gateway IP address")
+
+    untrust_gw_p = subparsers.add_parser(
+        "untrust-gateway", help="Remove a trusted gateway"
+    )
+    untrust_gw_p.add_argument("ssid", help="Network SSID")
+    untrust_gw_p.add_argument("gateway_ip", help="Gateway IP address")
+
+    blocked_gw_p = subparsers.add_parser(
+        "blocked-gateways", help="List blocked gateways"
+    )
+    blocked_gw_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
 
     mark_safe_p = subparsers.add_parser(
         "mark-safe", help="Mark app as safe (won't alert/kill)"
@@ -961,6 +1005,27 @@ def main():
                 args.ssid, args.gateway_ip, args.mac or ""
             )
             print(f"✓ Trusted gateway {args.gateway_ip} on {args.ssid}")
+        elif command == "block-gateway":
+            tracker.data_manager.add_blocked_gateway(
+                args.ssid, args.gateway_ip, args.mac or ""
+            )
+            print(f"✓ Blocked gateway {args.gateway_ip} on {args.ssid}")
+        elif command == "unblock-gateway":
+            removed = tracker.data_manager.remove_blocked_gateway(
+                args.ssid, args.gateway_ip
+            )
+            if removed:
+                print(f"✓ Unblocked gateway {args.gateway_ip} on {args.ssid}")
+            else:
+                print(f"Gateway {args.gateway_ip} not found in blocked list for {args.ssid}")
+        elif command == "untrust-gateway":
+            removed = tracker.data_manager.remove_known_gateway(
+                args.ssid, args.gateway_ip
+            )
+            if removed:
+                print(f"✓ Removed trusted gateway {args.gateway_ip} on {args.ssid}")
+            else:
+                print(f"Gateway {args.gateway_ip} not found in trusted list for {args.ssid}")
         elif command == "safe-apps":
             ssid_filter = args.ssid
             found = False
@@ -1019,6 +1084,30 @@ def main():
                             print(f"  {ip} ({mac})" if mac else f"  {ip}")
             if not found:
                 print("No trusted gateways configured.")
+        elif command == "blocked-gateways":
+            ssid_filter = args.ssid
+            found = False
+            for ssid, data in tracker.data_manager.usage_data.items():
+                if ssid_filter and ssid != ssid_filter:
+                    continue
+                gateways = data.get("blocked_gateways", [])
+                if gateways:
+                    found = True
+                    print(f"\n{ssid}:")
+                    for gw in gateways:
+                        vendor = gw.get("vendor") or ""
+                        mac = gw.get("mac") or ""
+                        ip = gw.get("ip", "")
+                        if vendor:
+                            print(
+                                f"  {ip} ({mac}) [{vendor}]"
+                                if mac
+                                else f"  {ip} [{vendor}]"
+                            )
+                        else:
+                            print(f"  {ip} ({mac})" if mac else f"  {ip}")
+            if not found:
+                print("No blocked gateways configured.")
         elif command == "today":
             measurement = tracker.monitor.get_measurement()
             current_ssid = measurement.get("ssid") if measurement else None
