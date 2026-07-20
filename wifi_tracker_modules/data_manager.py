@@ -26,9 +26,7 @@ class DataManager:
         limits_data (Dict): In-memory storage of limits data.
     """
 
-    def __init__(
-        self, data_file: str | None = None, limits_file: str | None = None
-    ):
+    def __init__(self, data_file: str | None = None, limits_file: str | None = None):
         """
         Initialize the Data Manager.
 
@@ -37,9 +35,7 @@ class DataManager:
             limits_file (str, optional): Path to the data limits file.
         """
         self.data_file = Path(data_file) if data_file else Config.get_data_file()
-        self.limits_file = (
-            Path(limits_file) if limits_file else Config.get_limits_file()
-        )
+        self.limits_file = Path(limits_file) if limits_file else Config.get_limits_file()
 
         # Check for legacy data and migrate if needed
         self._check_and_migrate_legacy_data()
@@ -234,9 +230,7 @@ class DataManager:
             return []
         return self.usage_data[ssid].get("known_gateways", [])
 
-    def is_known_gateway(
-        self, ssid: str, gateway_ip: str, gateway_mac: str | None = None
-    ) -> bool:
+    def is_known_gateway(self, ssid: str, gateway_ip: str, gateway_mac: str | None = None) -> bool:
         """Check if a gateway is already marked as safe (match by IP)."""
         known = self.get_known_gateways(ssid)
         return any(gw.get("ip") == gateway_ip for gw in known)
@@ -656,8 +650,7 @@ class DataManager:
         if accuracy_stats["total_measurements"] > 0:
             accuracy_stats["accuracy_score"] = min(
                 1.0,
-                accuracy_stats["successful_measurements"]
-                / accuracy_stats["total_measurements"],
+                accuracy_stats["successful_measurements"] / accuracy_stats["total_measurements"],
             )
 
     def get_session_usage(self, ssid: str, current_rx: int, current_tx: int) -> tuple:

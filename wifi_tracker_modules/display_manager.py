@@ -95,9 +95,7 @@ class DisplayManager:
             )
             end_date = custom_end_date if custom_end_date else datetime.now()
             current_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(
-                hour=23, minute=59, second=59, microsecond=999999
-            )
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
             while current_date <= end_date:
                 date_str = current_date.strftime("%Y-%m-%d")
@@ -231,9 +229,7 @@ class DisplayManager:
         time_str = current_time.strftime("%H:%M:%S")
         uptime_str = self.format_duration(uptime)
         status_color = "green" if current_ssid else "red"
-        status_text = (
-            f"[{status_color}]{current_ssid or 'Disconnected'}[/{status_color}]"
-        )
+        status_text = f"[{status_color}]{current_ssid or 'Disconnected'}[/{status_color}]"
 
         # Create Header Panel
         header_table = Table.grid(expand=True)
@@ -252,9 +248,7 @@ class DisplayManager:
 
         layout.split_column(
             Layout(
-                Panel(
-                    header_table, title="WiFi Tracker", border_style="blue", box=ROUNDED
-                ),
+                Panel(header_table, title="WiFi Tracker", border_style="blue", box=ROUNDED),
                 name="header",
                 size=6,
             ),
@@ -477,9 +471,7 @@ class DisplayManager:
         elif custom_end_date and not custom_start_date:
             start_label = f"to {custom_end_date.strftime('%Y-%m-%d')}"
 
-        table = Table(
-            title="📊 Enhanced WiFi Usage Statistics", box=ROUNDED, expand=True
-        )
+        table = Table(title="📊 Enhanced WiFi Usage Statistics", box=ROUNDED, expand=True)
 
         table.add_column("SSID", style="bold cyan")
         table.add_column("Total Usage", justify="right")
@@ -523,9 +515,7 @@ class DisplayManager:
                         data, interval, custom_start_date, custom_end_date
                     )
                     percent = (limit_usage / limit) * 100
-                    color = (
-                        "green" if percent < 80 else "yellow" if percent < 95 else "red"
-                    )
+                    color = "green" if percent < 80 else "yellow" if percent < 95 else "red"
                     limit_str = f"[{color}]{percent:.0f}% of {interval} cap[/]"
 
             ssid_display = ssid

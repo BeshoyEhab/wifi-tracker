@@ -85,9 +85,7 @@ class NotificationManager:
                 return ""
         return ""
 
-    def _ask_with_zenity(
-        self, title: str, body: str, options: list, timeout: int = 60
-    ) -> str:
+    def _ask_with_zenity(self, title: str, body: str, options: list, timeout: int = 60) -> str:
         """
         Ask user via zenity --list. Retries until timeout.
         options: [(TRUE/FALSE, value, label), ...]
@@ -128,9 +126,7 @@ class NotificationManager:
                 return ""
         return ""
 
-    def ask_gateway_trust(
-        self, ssid: str, gateway_ip: str, mac: str = "", vendor: str = ""
-    ) -> str:
+    def ask_gateway_trust(self, ssid: str, gateway_ip: str, mac: str = "", vendor: str = "") -> str:
         """
         Ask user whether to trust an unknown gateway.
         Returns: "trust", "block", or "ignored"
@@ -163,9 +159,7 @@ class NotificationManager:
                 ("TRUE", "trust", "Trust"),
                 ("FALSE", "block", "Block"),
             ]
-            choice = self._ask_with_zenity(
-                "Unknown Gateway Detected", body, options, timeout=60
-            )
+            choice = self._ask_with_zenity("Unknown Gateway Detected", body, options, timeout=60)
             if choice == "trust":
                 return "trust"
             elif choice == "block":
@@ -180,9 +174,7 @@ class NotificationManager:
         )
         return "ignored"
 
-    def ask_high_usage_action(
-        self, ssid: str, app_name: str, size: str, window: str
-    ) -> str:
+    def ask_high_usage_action(self, ssid: str, app_name: str, size: str, window: str) -> str:
         """
         Ask user what to do about a high-usage app.
         Returns: "safe_always", "kill_always", or "ignored"
@@ -215,9 +207,7 @@ class NotificationManager:
                 ("TRUE", "safe_always", "Mark safe"),
                 ("FALSE", "kill_always", "Kill now"),
             ]
-            choice = self._ask_with_zenity(
-                "High Data Usage Alert", body, options, timeout=60
-            )
+            choice = self._ask_with_zenity("High Data Usage Alert", body, options, timeout=60)
             if choice in ("safe_always", "kill_always"):
                 return choice
             return "ignored"

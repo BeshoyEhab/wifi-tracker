@@ -116,9 +116,7 @@ class ProcessManager:
                 if exclude_current and proc.pid == current_pid:
                     continue
 
-                self._log_info(
-                    f"Sending SIGTERM to PID {proc.pid}: {' '.join(proc.cmdline())}"
-                )
+                self._log_info(f"Sending SIGTERM to PID {proc.pid}: {' '.join(proc.cmdline())}")
                 proc.terminate()
                 killed_count += 1
 
@@ -137,9 +135,7 @@ class ProcessManager:
                     continue
 
                 if proc.is_running():
-                    self._log_info(
-                        f"Force killing PID {proc.pid}: {' '.join(proc.cmdline())}"
-                    )
+                    self._log_info(f"Force killing PID {proc.pid}: {' '.join(proc.cmdline())}")
                     proc.kill()
 
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -226,9 +222,7 @@ class ProcessManager:
         """
         return self.get_systemd_service_path().exists()
 
-    def install_systemd_service(
-        self, executable_path: str, args: str = "daemon"
-    ) -> bool:
+    def install_systemd_service(self, executable_path: str, args: str = "daemon") -> bool:
         """
         Generate and install systemd user service.
 
@@ -271,9 +265,7 @@ WantedBy=default.target
             subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
 
             # Enable and start
-            subprocess.run(
-                ["systemctl", "--user", "enable", "wifi-tracker"], check=True
-            )
+            subprocess.run(["systemctl", "--user", "enable", "wifi-tracker"], check=True)
             subprocess.run(["systemctl", "--user", "start", "wifi-tracker"], check=True)
 
             print(f"✅ Systemd service installed at: {service_path}")
@@ -309,9 +301,7 @@ WantedBy=default.target
                 service_path.unlink()
 
             # Reload
-            subprocess.run(
-                ["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL
-            )
+            subprocess.run(["systemctl", "--user", "daemon-reload"], stderr=subprocess.DEVNULL)
 
             print("✅ Systemd service removed")
             return True
@@ -417,9 +407,7 @@ WantedBy=default.target
             "error_log": str(self.error_log),
         }
 
-    def get_top_network_apps(
-        self, limit: int = 10, ssid: str = None
-    ) -> list[dict[str, Any]]:
+    def get_top_network_apps(self, limit: int = 10, ssid: str = None) -> list[dict[str, Any]]:
         """
         Get top applications using the network.
 
@@ -452,9 +440,7 @@ WantedBy=default.target
                         name = proc.name()
                         username = proc.username()
                         try:
-                            parent_name = (
-                                proc.parent().name() if proc.parent() else name
-                            )
+                            parent_name = proc.parent().name() if proc.parent() else name
                         except (psutil.NoSuchProcess, psutil.AccessDenied):
                             parent_name = name
 

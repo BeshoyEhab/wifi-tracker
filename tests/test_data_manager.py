@@ -72,9 +72,7 @@ class TestDataManager(unittest.TestCase):
 
         # Reset: 100, 100 (Should be treated as new session, 0 delta)
         self.data_manager.update_usage(ssid, 100, 100)
-        self.assertEqual(
-            self.data_manager.usage_data[ssid]["total_rx"], 1000
-        )  # Unchanged
+        self.assertEqual(self.data_manager.usage_data[ssid]["total_rx"], 1000)  # Unchanged
 
         # New usage: 200, 200 (+100 each)
         self.data_manager.update_usage(ssid, 200, 200)

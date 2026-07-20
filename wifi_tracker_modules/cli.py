@@ -38,9 +38,7 @@ except ImportError as e:
         from wifi_tracker_modules.process_manager import ProcessManager
     except ImportError:
         print(f"Error importing modules: {e}")
-        print(
-            "Please ensure wifi_tracker_modules directory exists with all required modules."
-        )
+        print("Please ensure wifi_tracker_modules directory exists with all required modules.")
         sys.exit(1)
 
 
@@ -68,9 +66,7 @@ class WiFiTracker:
         self.data_manager = DataManager()
         self.display_manager = DisplayManager()
         self.alert_manager = AlertManager(self.data_manager, self.process_manager)
-        self.app_manager = AppManager(
-            self.data_manager, self.process_manager, self.display_manager
-        )
+        self.app_manager = AppManager(self.data_manager, self.process_manager, self.display_manager)
 
         # Update interface from monitor if auto-detected
         if not self.interface:
@@ -140,9 +136,7 @@ class WiFiTracker:
         print(f"📊 Data will be saved to: {self.data_manager.data_file}")
 
         # Notify start
-        notifier.send_notification(
-            "WiFi Tracker", "Daemon started in background", Urgency.LOW
-        )
+        notifier.send_notification("WiFi Tracker", "Daemon started in background", Urgency.LOW)
 
         # Daemonize (skip if run from systemd — it manages the process)
         if os.environ.get("INVOCATION_ID"):
@@ -187,9 +181,7 @@ class WiFiTracker:
 
                     now_hour = datetime.now().hour
                     if now_hour == 0 and last_daily_summary_hour != 0:
-                        self.alert_manager.send_daily_summary(
-                            current_ssid, self.display_manager
-                        )
+                        self.alert_manager.send_daily_summary(current_ssid, self.display_manager)
                     last_daily_summary_hour = now_hour
 
                 current_time = time.time()
@@ -271,22 +263,14 @@ class WiFiTracker:
         self._gateway_prompted_at[key] = now
 
         # Unknown gateway - ask user
-        choice = notifier.ask_gateway_trust(
-            ssid, gateway_ip, gateway_mac or "", vendor or ""
-        )
+        choice = notifier.ask_gateway_trust(ssid, gateway_ip, gateway_mac or "", vendor or "")
 
         if choice.lower() == "trust":
             self.data_manager.add_known_gateway(ssid, gateway_ip, gateway_mac, vendor)
-            self._log_info(
-                f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}"
-            )
+            self._log_info(f"User trusted gateway {gateway_ip} ({gateway_mac}) on {ssid}")
         elif choice.lower() == "block":
-            self.data_manager.add_blocked_gateway(
-                ssid, gateway_ip, gateway_mac, vendor
-            )
-            self._log_info(
-                f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}"
-            )
+            self.data_manager.add_blocked_gateway(ssid, gateway_ip, gateway_mac, vendor)
+            self._log_info(f"User blocked gateway {gateway_ip} ({gateway_mac}) on {ssid}")
         else:
             self._log_info(
                 f"Unknown gateway {gateway_ip} ({gateway_mac}) [{vendor}] on {ssid} - notification sent"
@@ -321,9 +305,7 @@ class WiFiTracker:
                     measurement = self.monitor.get_measurement()
                     current_ssid = measurement.get("ssid") if measurement else None
 
-                    self._monitoring_tick(
-                        measurement, current_ssid, notified_high_usage
-                    )
+                    self._monitoring_tick(measurement, current_ssid, notified_high_usage)
 
                     if measurement and current_ssid:
                         last_app_check_time = self._check_high_usage_periodically(
@@ -331,9 +313,7 @@ class WiFiTracker:
                         )
 
                     ssid_data = (
-                        self.data_manager.usage_data.get(current_ssid, {})
-                        if current_ssid
-                        else {}
+                        self.data_manager.usage_data.get(current_ssid, {}) if current_ssid else {}
                     )
                     rx_rate = measurement.get("rx_rate", 0) if measurement else 0
                     tx_rate = measurement.get("tx_rate", 0) if measurement else 0
@@ -410,9 +390,7 @@ class WiFiTracker:
         try:
             self.data_manager.load_data()
             current_measurement = self.monitor.get_measurement()
-            current_ssid = (
-                current_measurement.get("ssid") if current_measurement else None
-            )
+            current_ssid = current_measurement.get("ssid") if current_measurement else None
 
             if current_measurement and current_ssid:
                 self.data_manager.update_usage(
@@ -430,9 +408,7 @@ class WiFiTracker:
                 and current_ssid
                 and current_ssid in self.data_manager.limits_data
             ):
-                usage_from_str = self.data_manager.limits_data[current_ssid].get(
-                    "usage_from"
-                )
+                usage_from_str = self.data_manager.limits_data[current_ssid].get("usage_from")
                 if usage_from_str:
                     custom_start_date = datetime.strptime(usage_from_str, "%Y-%m-%d")
 
@@ -450,16 +426,12 @@ class WiFiTracker:
 
             # Check for systemd
             systemd_status = (
-                "Installed"
-                if self.process_manager.is_systemd_installed()
-                else "Not Installed"
+                "Installed" if self.process_manager.is_systemd_installed() else "Not Installed"
             )
 
             print("\n🔧 Process Information:")
             print(f"Current PID: {process_info['current_pid']}")
-            print(
-                f"Daemon running: {'Yes' if process_info['daemon_running'] else 'No'}"
-            )
+            print(f"Daemon running: {'Yes' if process_info['daemon_running'] else 'No'}")
             print(f"Systemd Service: {systemd_status}")
             print(f"Total instances: {process_info['total_instances']}")
             if not process_info["daemon_running"]:
@@ -568,9 +540,7 @@ class WiFiTracker:
         removed_count = self.data_manager.cleanup_old_data(days)
         if removed_count > 0:
             self.data_manager.save_data()
-            print(
-                f"✅ Cleaned up {removed_count} old daily records (older than {days} days)"
-            )
+            print(f"✅ Cleaned up {removed_count} old daily records (older than {days} days)")
         else:
             print(f"ℹ️ No old data to clean up (older than {days} days)")
 
@@ -602,17 +572,13 @@ class WiFiTracker:
             table.add_column("Total Usage", justify="right")
             table.add_column("Last Seen", style="dim")
 
-            for net in sorted(
-                networks, key=lambda x: x.get("last_seen") or "", reverse=True
-            ):
+            for net in sorted(networks, key=lambda x: x.get("last_seen") or "", reverse=True):
                 total = net["total_rx"] + net["total_tx"]
                 gw = net.get("gateway_ip") or "N/A"
                 last = net.get("last_seen", "Unknown")
                 if isinstance(last, str) and len(last) > 16:
                     last = last[:16]
-                table.add_row(
-                    net["ssid"], gw, self.display_manager.format_bytes(total), last
-                )
+                table.add_row(net["ssid"], gw, self.display_manager.format_bytes(total), last)
 
             self.display_manager.console.print(table)
         else:
@@ -736,21 +702,15 @@ def main():
 """,
     )
 
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
-    parser.add_argument(
-        "--quiet", "-q", action="store_true", help="Suppress desktop notifications"
-    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress desktop notifications")
     parser.add_argument(
         "--json", "-j", action="store_true", help="Output in JSON format (for status/today)"
     )
 
     # Global options
     parser.add_argument("--interface", "-i", help="Network interface to monitor")
-    parser.add_argument(
-        "--interval", type=float, default=0.5, help="Update interval in seconds"
-    )
+    parser.add_argument("--interval", type=float, default=0.5, help="Update interval in seconds")
 
     subparsers = parser.add_subparsers(dest="command", help="See categories below")
 
@@ -758,9 +718,7 @@ def main():
     subparsers.add_parser("daemon", aliases=["d"], help="Start background monitoring")
     subparsers.add_parser("watch", aliases=["w"], help="Live interactive dashboard")
 
-    status_p = subparsers.add_parser(
-        "status", aliases=["s"], help="Show usage statistics"
-    )
+    status_p = subparsers.add_parser("status", aliases=["s"], help="Show usage statistics")
     status_p.add_argument("--all", action="store_true", help="Show all networks")
     status_p.add_argument("--from-date", help="Start date (YYYY-MM-DD)")
     status_p.add_argument("--to-date", help="End date (YYYY-MM-DD)")
@@ -772,9 +730,7 @@ def main():
         help="Time range (default: 24h)",
     )
 
-    today_p = subparsers.add_parser(
-        "today", aliases=["t"], help="Quick one-line status"
-    )
+    today_p = subparsers.add_parser("today", aliases=["t"], help="Quick one-line status")
     today_p.add_argument(
         "--range",
         dest="range_str",
@@ -800,9 +756,7 @@ def main():
     limit_p = subparsers.add_parser("limit", help="Set data limit")
     limit_p.add_argument("ssid", help="Network SSID")
     limit_p.add_argument("size", help="Limit size (e.g. 1GB, 500MB)")
-    limit_p.add_argument(
-        "interval", choices=["daily", "weekly", "monthly"], help="Limit interval"
-    )
+    limit_p.add_argument("interval", choices=["daily", "weekly", "monthly"], help="Limit interval")
 
     rm_limit_p = subparsers.add_parser("remove-limit", help="Remove a data limit")
     rm_limit_p.add_argument("ssid", help="Network SSID")
@@ -812,21 +766,15 @@ def main():
     usage_p.add_argument("date", help="Start date (YYYY-MM-DD or relative like 2weeks)")
 
     alert_p = subparsers.add_parser("alert", help="Configure high-usage alerts")
-    alert_p.add_argument(
-        "args", nargs="*", help="show | <threshold> <window> (e.g. 2GB 1h)"
-    )
+    alert_p.add_argument("args", nargs="*", help="show | <threshold> <window> (e.g. 2GB 1h)")
 
     # ── Security ────────────────────────────────────────────────
-    trust_gw_p = subparsers.add_parser(
-        "trust-gateway", help="Trust a gateway (MITM protection)"
-    )
+    trust_gw_p = subparsers.add_parser("trust-gateway", help="Trust a gateway (MITM protection)")
     trust_gw_p.add_argument("ssid", help="Network SSID")
     trust_gw_p.add_argument("gateway_ip", help="Gateway IP address")
     trust_gw_p.add_argument("--mac", help="Gateway MAC address (optional)")
 
-    trusted_gw_p = subparsers.add_parser(
-        "trusted-gateways", help="List trusted gateways"
-    )
+    trusted_gw_p = subparsers.add_parser("trusted-gateways", help="List trusted gateways")
     trusted_gw_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
 
     block_gw_p = subparsers.add_parser(
@@ -836,38 +784,26 @@ def main():
     block_gw_p.add_argument("gateway_ip", help="Gateway IP address")
     block_gw_p.add_argument("--mac", help="Gateway MAC address (optional)")
 
-    unblock_gw_p = subparsers.add_parser(
-        "unblock-gateway", help="Unblock a gateway"
-    )
+    unblock_gw_p = subparsers.add_parser("unblock-gateway", help="Unblock a gateway")
     unblock_gw_p.add_argument("ssid", help="Network SSID")
     unblock_gw_p.add_argument("gateway_ip", help="Gateway IP address")
 
-    untrust_gw_p = subparsers.add_parser(
-        "untrust-gateway", help="Remove a trusted gateway"
-    )
+    untrust_gw_p = subparsers.add_parser("untrust-gateway", help="Remove a trusted gateway")
     untrust_gw_p.add_argument("ssid", help="Network SSID")
     untrust_gw_p.add_argument("gateway_ip", help="Gateway IP address")
 
-    blocked_gw_p = subparsers.add_parser(
-        "blocked-gateways", help="List blocked gateways"
-    )
+    blocked_gw_p = subparsers.add_parser("blocked-gateways", help="List blocked gateways")
     blocked_gw_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
 
-    mark_safe_p = subparsers.add_parser(
-        "mark-safe", help="Mark app as safe (won't alert/kill)"
-    )
+    mark_safe_p = subparsers.add_parser("mark-safe", help="Mark app as safe (won't alert/kill)")
     mark_safe_p.add_argument("ssid", help="Network SSID")
     mark_safe_p.add_argument("app_name", help="Process/command name")
-    mark_safe_p.add_argument(
-        "--always", action="store_true", help="Always safe (not just once)"
-    )
+    mark_safe_p.add_argument("--always", action="store_true", help="Always safe (not just once)")
 
     safe_apps_p = subparsers.add_parser("safe-apps", help="List trusted apps")
     safe_apps_p.add_argument("ssid", nargs="?", help="Network SSID (omit for all)")
 
-    kill_app_p = subparsers.add_parser(
-        "kill-app", help="Kill app or auto-kill on limit"
-    )
+    kill_app_p = subparsers.add_parser("kill-app", help="Kill app or auto-kill on limit")
     kill_app_p.add_argument("ssid", help="Network SSID")
     kill_app_p.add_argument("app_name", help="Process/command name")
     kill_app_p.add_argument(
@@ -987,41 +923,25 @@ def main():
             else:
                 print(f"No running processes found for '{args.app_name}'")
             if args.always:
-                tracker.data_manager.mark_app_kill(
-                    args.ssid, args.app_name, always=True
-                )
-                print(
-                    f"✓ Will auto-kill '{args.app_name}' when exceeding limit on {args.ssid}"
-                )
+                tracker.data_manager.mark_app_kill(args.ssid, args.app_name, always=True)
+                print(f"✓ Will auto-kill '{args.app_name}' when exceeding limit on {args.ssid}")
             else:
-                tracker.data_manager.mark_app_kill(
-                    args.ssid, args.app_name, always=False
-                )
-                print(
-                    f"✓ Will kill '{args.app_name}' once when exceeding limit on {args.ssid}"
-                )
+                tracker.data_manager.mark_app_kill(args.ssid, args.app_name, always=False)
+                print(f"✓ Will kill '{args.app_name}' once when exceeding limit on {args.ssid}")
         elif command == "trust-gateway":
-            tracker.data_manager.add_known_gateway(
-                args.ssid, args.gateway_ip, args.mac or ""
-            )
+            tracker.data_manager.add_known_gateway(args.ssid, args.gateway_ip, args.mac or "")
             print(f"✓ Trusted gateway {args.gateway_ip} on {args.ssid}")
         elif command == "block-gateway":
-            tracker.data_manager.add_blocked_gateway(
-                args.ssid, args.gateway_ip, args.mac or ""
-            )
+            tracker.data_manager.add_blocked_gateway(args.ssid, args.gateway_ip, args.mac or "")
             print(f"✓ Blocked gateway {args.gateway_ip} on {args.ssid}")
         elif command == "unblock-gateway":
-            removed = tracker.data_manager.remove_blocked_gateway(
-                args.ssid, args.gateway_ip
-            )
+            removed = tracker.data_manager.remove_blocked_gateway(args.ssid, args.gateway_ip)
             if removed:
                 print(f"✓ Unblocked gateway {args.gateway_ip} on {args.ssid}")
             else:
                 print(f"Gateway {args.gateway_ip} not found in blocked list for {args.ssid}")
         elif command == "untrust-gateway":
-            removed = tracker.data_manager.remove_known_gateway(
-                args.ssid, args.gateway_ip
-            )
+            removed = tracker.data_manager.remove_known_gateway(args.ssid, args.gateway_ip)
             if removed:
                 print(f"✓ Removed trusted gateway {args.gateway_ip} on {args.ssid}")
             else:
@@ -1075,11 +995,7 @@ def main():
                         mac = gw.get("mac") or ""
                         ip = gw.get("ip", "")
                         if vendor:
-                            print(
-                                f"  {ip} ({mac}) [{vendor}]"
-                                if mac
-                                else f"  {ip} [{vendor}]"
-                            )
+                            print(f"  {ip} ({mac}) [{vendor}]" if mac else f"  {ip} [{vendor}]")
                         else:
                             print(f"  {ip} ({mac})" if mac else f"  {ip}")
             if not found:
@@ -1099,11 +1015,7 @@ def main():
                         mac = gw.get("mac") or ""
                         ip = gw.get("ip", "")
                         if vendor:
-                            print(
-                                f"  {ip} ({mac}) [{vendor}]"
-                                if mac
-                                else f"  {ip} [{vendor}]"
-                            )
+                            print(f"  {ip} ({mac}) [{vendor}]" if mac else f"  {ip} [{vendor}]")
                         else:
                             print(f"  {ip} ({mac})" if mac else f"  {ip}")
             if not found:
@@ -1116,10 +1028,7 @@ def main():
             else:
                 range_str = getattr(args, "range_str", "24h")
                 range_usage = sum(
-                    v
-                    for _, v in tracker.data_manager.get_usage_for_graph(
-                        current_ssid, range_str
-                    )
+                    v for _, v in tracker.data_manager.get_usage_for_graph(current_ssid, range_str)
                 )
                 ssid_data = tracker.data_manager.usage_data.get(current_ssid, {})
                 total = ssid_data.get("total_rx", 0) + ssid_data.get("total_tx", 0)
@@ -1184,9 +1093,7 @@ def main():
             else:
                 tracker.data_manager.load_data()
                 range_str = getattr(args, "range_str", "24h")
-                hourly = tracker.data_manager.get_usage_for_graph(
-                    target_ssid, range_str
-                )
+                hourly = tracker.data_manager.get_usage_for_graph(target_ssid, range_str)
                 tracker.display_manager.print_ascii_graph(
                     hourly, target_ssid, range_label=range_str
                 )

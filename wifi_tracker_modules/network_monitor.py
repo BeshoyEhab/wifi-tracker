@@ -22,9 +22,7 @@ class NetworkMonitor:
     def detect_wireless_interface(self) -> str:
         """Auto-detect the active wireless interface"""
         try:
-            result = subprocess.run(
-                ["iwconfig"], capture_output=True, text=True, timeout=5
-            )
+            result = subprocess.run(["iwconfig"], capture_output=True, text=True, timeout=5)
             for line in result.stdout.split("\n"):
                 if "IEEE 802.11" in line and "no wireless extensions" not in line:
                     interface = line.split()[0]
@@ -72,9 +70,7 @@ class NetworkMonitor:
     def get_current_ssid(self) -> str | None:
         """Get currently connected WiFi SSID"""
         try:
-            result = subprocess.run(
-                ["iwgetid", "-r"], capture_output=True, text=True, timeout=3
-            )
+            result = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True, timeout=3)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
         except (
@@ -238,16 +234,10 @@ class NetworkMonitor:
             with open("/proc/net/route") as f:
                 for line in f:
                     parts = line.strip().split()
-                    if (
-                        len(parts) >= 3
-                        and parts[0] == self.interface
-                        and parts[1] == "00000000"
-                    ):
+                    if len(parts) >= 3 and parts[0] == self.interface and parts[1] == "00000000":
                         gw_hex = parts[2]
                         gw_bytes = bytes.fromhex(gw_hex)
-                        gateway = (
-                            f"{gw_bytes[3]}.{gw_bytes[2]}.{gw_bytes[1]}.{gw_bytes[0]}"
-                        )
+                        gateway = f"{gw_bytes[3]}.{gw_bytes[2]}.{gw_bytes[1]}.{gw_bytes[0]}"
                         if gateway != "0.0.0.0":
                             return gateway
         except (FileNotFoundError, ValueError, IndexError):
