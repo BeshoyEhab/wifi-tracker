@@ -56,33 +56,32 @@ class NotificationManager:
         self, title: str, body: str, actions: dict, timeout: int = 60
     ) -> str:
         """
-        Ask user via notify-send.sh. Retries until timeout or user clicks.
-        actions: {label: command, ...}  e.g. {"Trust": "wifi-tracker trust-gateway ..."}
+        Ask user via notify-send.sh. Sends ONE notification and waits for response.
+        actions: {label: command, ...}
         Returns the label clicked, or "" on timeout.
         """
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                cmd = [
-                    "notify-send.sh",
-                    "--urgency=critical",
-                    "--app-name=WiFi Tracker",
-                ]
-                for label, command in actions.items():
-                    cmd.append(f"--action={label}:{command}")
-                cmd += [title, body]
+        try:
+            cmd = [
+                "notify-send.sh",
+                "--urgency=critical",
+                "--app-name=WiFi Tracker",
+                f"--expire-time={timeout * 1000}",
+            ]
+            for label, command in actions.items():
+                cmd.append(f"--action={label}:{command}")
+            cmd += [title, body]
 
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                )
-                choice = result.stdout.strip()
-                if choice:
-                    return choice
-                time.sleep(2)
-            except Exception:
-                return ""
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 5,
+            )
+            choice = result.stdout.strip()
+            if choice:
+                return choice
+        except Exception:
+            pass
         return ""
 
     def _ask_with_zenity(self, title: str, body: str, options: list, timeout: int = 60) -> str:
