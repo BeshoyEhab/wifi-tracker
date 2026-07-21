@@ -58,7 +58,7 @@ class WiFiTracker:
         self.running = False
         self.start_time = datetime.now()
         self.last_ssid: str | None = None
-        self._gateway_prompted_at: dict[tuple[str, str], float] = {}
+        self._gateway_prompted: set[tuple[str, str]] = set()
 
         # Initialize modules
         self.monitor = NetworkMonitor(interface, interval)
@@ -254,13 +254,11 @@ class WiFiTracker:
         if self.data_manager.is_blocked_gateway(ssid, gateway_ip, gateway_mac):
             return
 
-        # Cooldown: don't re-prompt for the same gateway within 60 seconds
+        # Don't re-prompt for the same gateway in this session
         key = (ssid, gateway_ip)
-        now = time.time()
-        last_prompted = self._gateway_prompted_at.get(key, 0)
-        if now - last_prompted < 60:
+        if key in self._gateway_prompted:
             return
-        self._gateway_prompted_at[key] = now
+        self._gateway_prompted.add(key)
 
         # Unknown gateway - ask user
         choice = notifier.ask_gateway_trust(ssid, gateway_ip, gateway_mac or "", vendor or "")

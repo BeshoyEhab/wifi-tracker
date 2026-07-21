@@ -65,7 +65,6 @@ class NotificationManager:
                 "notify-send.sh",
                 "--urgency=critical",
                 "--app-name=WiFi Tracker",
-                f"--expire-time={timeout * 1000}",
             ]
             for label, command in actions.items():
                 cmd.append(f"--action={label}:{command}")
