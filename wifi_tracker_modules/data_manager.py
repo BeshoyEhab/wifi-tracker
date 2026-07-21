@@ -563,20 +563,22 @@ class DataManager:
         last_rx = ssid_data.get("last_interface_rx", rx_bytes)
         last_tx = ssid_data.get("last_interface_tx", tx_bytes)
 
-        # Handle interface counter resets (when current < last)
-        if rx_bytes < last_rx or tx_bytes < last_tx:
-            # Interface counters were reset (e.g. interface restart, system reboot).
-            # We cannot know how much traffic occurred between the last measurement
-            # and the reset, so that traffic is permanently lost.
-            # Log the event and start fresh from the new counter values.
-            lost_rx = max(0, last_rx)
-            lost_tx = max(0, last_tx)
-            print(
-                f"[WARN] Interface counter reset detected for {ssid}. "
-                f"Lost ~{lost_rx + lost_tx} bytes of unrecorded traffic."
-            )
+        # Detect large time gaps (daemon restart, sleep/resume)
+        # A gap > 5s means we missed traffic — don't count the accumulated delta
+        last_seen_str = ssid_data.get("last_seen")
+        large_gap = False
+        if last_seen_str:
+            try:
+                last_seen = datetime.fromisoformat(last_seen_str)
+                gap_seconds = (timestamp - last_seen).total_seconds()
+                if gap_seconds > 5.0:
+                    large_gap = True
+            except ValueError:
+                pass
 
-            # Start new session tracking from the reset point
+        if large_gap or rx_bytes < last_rx or tx_bytes < last_tx:
+            # Interface counters were reset or there's a large time gap.
+            # Start fresh from current counter values.
             ssid_data["session_start_rx"] = rx_bytes
             ssid_data["session_start_tx"] = tx_bytes
             rx_delta = 0
