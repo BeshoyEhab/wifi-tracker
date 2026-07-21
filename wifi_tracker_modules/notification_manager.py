@@ -136,14 +136,12 @@ class NotificationManager:
         mac_info = f"\nMAC: {mac}" if mac else ""
         vendor_info = f"\nVendor: {vendor}" if vendor else ""
         body = f"New gateway on {ssid}:\nIP: {gateway_ip}{mac_info}{vendor_info}"
-        trust_cmd = f'wifi-tracker trust-gateway "{ssid}" {gateway_ip}'
-        block_cmd = f'wifi-tracker block-gateway "{ssid}" {gateway_ip}'
 
         # Use notify-send.sh (preferred) or zenity, never both
         if self.notify_send_sh:
             actions = {
-                "Trust": trust_cmd,
-                "Block": block_cmd,
+                "Trust": "true",
+                "Block": "true",
             }
             choice = self._ask_with_notify_send_sh(
                 "Unknown Gateway Detected", body, actions, timeout=60
@@ -167,6 +165,7 @@ class NotificationManager:
             return "ignored"
 
         # Fallback: plain notification
+        trust_cmd = f'wifi-tracker trust-gateway "{ssid}" {gateway_ip}'
         self.send_notification(
             "Unknown Gateway Detected",
             f"{body}\nRun: {trust_cmd}",
