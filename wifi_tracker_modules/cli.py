@@ -1024,14 +1024,20 @@ def main():
             if not current_ssid:
                 print("Not connected to any network.")
             else:
-                range_str = getattr(args, "range_str", "24h")
-                range_usage = sum(
-                    v for _, v in tracker.data_manager.get_usage_for_graph(current_ssid, range_str)
-                )
                 ssid_data = tracker.data_manager.usage_data.get(current_ssid, {})
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                daily_data = ssid_data.get("daily", {}).get(today_str, {})
+                today_usage = daily_data.get("rx", 0) + daily_data.get("tx", 0)
                 total = ssid_data.get("total_rx", 0) + ssid_data.get("total_tx", 0)
-                rate_up = measurement.get("tx_rate", 0)
-                rate_down = measurement.get("rx_rate", 0)
+                now = datetime.now()
+                midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                secs = (now - midnight).total_seconds()
+                if secs > 0:
+                    rate_down = daily_data.get("rx", 0) / secs
+                    rate_up = daily_data.get("tx", 0) / secs
+                else:
+                    rate_down = 0.0
+                    rate_up = 0.0
                 limit_info = tracker.data_manager.limits_data.get(current_ssid, {})
                 limit = limit_info.get("limit", 0)
                 top_app = ""
@@ -1041,46 +1047,29 @@ def main():
                         top_app = apps[0].get("name", "")
                 except Exception:
                     pass
-                range_labels = {
-                    "1h": "Last 1h",
-                    "24h": "Today",
-                    "7d": "Last 7d",
-                    "30d": "Last 30d",
-                    "12m": "Last 12m",
-                }
-                range_label = range_labels.get(range_str, "Today")
                 if args.json:
                     status_data = tracker.display_manager.format_status_json(
                         current_ssid,
-                        range_usage,
+                        today_usage,
                         total,
                         rate_up,
                         rate_down,
                         limit,
                         top_app,
-                        range_label,
+                        "Today",
                     )
                     tracker.display_manager.output_json(status_data)
                 else:
                     tracker.display_manager.print_quick_status(
                         current_ssid,
-                        range_usage,
+                        today_usage,
                         total,
                         rate_up,
                         rate_down,
                         limit,
                         top_app,
-                        range_label,
+                        "Today",
                     )
-                    if not tracker.process_manager.is_daemon_running():
-                        if tracker.display_manager.console:
-                            tracker.display_manager.console.print(
-                                "  [yellow]⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon[/]"
-                            )
-                        else:
-                            print(
-                                "  ⚠ Daemon not running — rates are 0, start with: wifi-tracker daemon"
-                            )
         elif command == "graph":
             target_ssid = getattr(args, "ssid", None)
             if not target_ssid:
