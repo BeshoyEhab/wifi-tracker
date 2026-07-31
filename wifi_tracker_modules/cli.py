@@ -18,6 +18,7 @@ import psutil
 from . import __version__
 
 try:
+    from . import perapp
     from .alert_manager import AlertManager
     from .app_manager import AppManager
     from .config import Config
@@ -28,6 +29,7 @@ try:
     from .process_manager import ProcessManager
 except ImportError as e:
     try:
+        from wifi_tracker_modules import perapp
         from wifi_tracker_modules.alert_manager import AlertManager
         from wifi_tracker_modules.app_manager import AppManager
         from wifi_tracker_modules.config import Config
@@ -59,6 +61,8 @@ class WiFiTracker:
         self.start_time = datetime.now()
         self.last_ssid: str | None = None
         self._gateway_prompted: set[tuple[str, str]] = set()
+        self._last_app_check_rx: int | None = None
+        self._last_app_check_tx: int | None = None
 
         # Initialize modules
         self.monitor = NetworkMonitor(interface, interval)
@@ -151,7 +155,7 @@ class WiFiTracker:
 
         # Setup daemon environment
         self.process_manager.create_pid_file()
-        self.process_manager.setup_signal_handlers(self._cleanup)
+        self.process_manager.setup_signal_handlers(self._request_shutdown)
 
         # Set running flag and start monitoring
         self.running = True
@@ -168,14 +172,24 @@ class WiFiTracker:
 
         while self.running:
             try:
+                if not self.running:
+                    break
+
                 measurement = self.monitor.get_measurement()
                 current_ssid = measurement.get("ssid") if measurement else None
+
+                if not self.running:
+                    break
 
                 self._monitoring_tick(measurement, current_ssid, notified_high_usage)
 
                 if measurement and current_ssid:
                     last_app_check_time = self._check_high_usage_periodically(
-                        current_ssid, notified_high_usage, last_app_check_time
+                        current_ssid,
+                        notified_high_usage,
+                        last_app_check_time,
+                        measurement["rx_bytes"],
+                        measurement["tx_bytes"],
                     )
                     self.app_manager.check_new_apps(current_ssid, known_apps)
 
@@ -189,13 +203,13 @@ class WiFiTracker:
                     self.data_manager.save_data()
                     last_save_time = current_time
 
-                time.sleep(self.interval)
+                self._interruptible_sleep(self.interval)
 
             except KeyboardInterrupt:
                 break
             except Exception as e:
                 self.process_manager._log_error(f"Error in monitoring loop: {e}")
-                time.sleep(1)
+                self._interruptible_sleep(1)
 
         self._cleanup()
 
@@ -228,12 +242,29 @@ class WiFiTracker:
         current_ssid: str,
         notified_high_usage: set,
         last_check_time: float,
+        rx_bytes: int | None = None,
+        tx_bytes: int | None = None,
         interval: float = 60,
     ) -> float:
         """Check high-usage apps if enough time has passed. Returns updated last_check_time."""
         now = time.time()
         if now - last_check_time >= interval:
-            self.app_manager.check_high_usage_apps(current_ssid, notified_high_usage)
+            real_rx_delta = None
+            real_tx_delta = None
+            if rx_bytes is not None and tx_bytes is not None:
+                last_rx = self._last_app_check_rx
+                last_tx = self._last_app_check_tx
+                if last_rx is not None and last_tx is not None:
+                    real_rx_delta = max(0, rx_bytes - last_rx)
+                    real_tx_delta = max(0, tx_bytes - last_tx)
+                self._last_app_check_rx = rx_bytes
+                self._last_app_check_tx = tx_bytes
+            self.app_manager.check_high_usage_apps(
+                current_ssid,
+                notified_high_usage,
+                real_rx_delta=real_rx_delta,
+                real_tx_delta=real_tx_delta,
+            )
             return now
         return last_check_time
 
@@ -307,7 +338,11 @@ class WiFiTracker:
 
                     if measurement and current_ssid:
                         last_app_check_time = self._check_high_usage_periodically(
-                            current_ssid, notified_high_usage, last_app_check_time
+                            current_ssid,
+                            notified_high_usage,
+                            last_app_check_time,
+                            measurement["rx_bytes"],
+                            measurement["tx_bytes"],
                         )
 
                     ssid_data = (
@@ -456,8 +491,34 @@ class WiFiTracker:
         """Show top 10 applications"""
         try:
             ssid = self.monitor.get_current_ssid()
-            top_apps = self.process_manager.get_top_network_apps(limit=10, ssid=ssid)
-            self.display_manager.print_top_network_apps(top_apps)
+            snapshot = perapp.read_snapshot()
+            if snapshot:
+                apps = [
+                    {
+                        "pid": "n/a",
+                        "user": "root collector",
+                        "name": name,
+                        "bytes_recv": counts.get("recv", 0),
+                        "bytes_sent": counts.get("sent", 0),
+                        "remote_addrs": [],
+                    }
+                    for name, counts in snapshot.get("apps", {}).items()
+                ][:10]
+                if not apps:
+                    apps = []
+                self.display_manager.print_top_network_apps(apps)
+                if self.display_manager.console:
+                    self.display_manager.console.print(
+                        "  [dim]Data from root conntrack collector (accurate).[/dim]"
+                    )
+            else:
+                top_apps = self.process_manager.get_top_network_apps(limit=10, ssid=ssid)
+                self.display_manager.print_top_network_apps(top_apps)
+                if self.display_manager.console:
+                    self.display_manager.console.print(
+                        "  [dim]Estimates from rchar-read_bytes. Install the root collector "
+                        "for accuracy: wifi-tracker perapp install[/dim]"
+                    )
             if not self.process_manager.is_daemon_running():
                 if self.display_manager.console:
                     self.display_manager.console.print(
@@ -469,6 +530,35 @@ class WiFiTracker:
                     )
         except Exception as e:
             print(f"❌ Error getting top apps: {e}")
+
+    def perapp_mode(self, action: str) -> None:
+        """Handle the perapp subcommand (accurate per-app collector)."""
+        if action in ("install", "remove") and not perapp.is_root():
+            iface = getattr(self, "_perapp_interface", "")
+            if not iface:
+                iface = self.monitor.interface or ""
+            perapp.reexec_as_root(action, iface or None)
+            return
+        if action == "install":
+            iface = getattr(self, "_perapp_interface", "")
+            if not iface:
+                iface = self.monitor.interface or ""
+            ok, msg = perapp.install_system_service(interface=iface)
+            print(f"{'✅' if ok else '❌'} {msg}")
+            return
+        if action == "remove":
+            ok, msg = perapp.remove_system_service()
+            print(f"{'✅' if ok else '❌'} {msg}")
+            return
+
+        status = perapp.collector_status()
+        print(f"Installed:      {'yes' if status['installed'] else 'no'}")
+        print(f"Service active: {status['service_active']}")
+        print(f"Collector file: {status['collector_file'] or 'not installed'}")
+        print(f"Last snapshot:  {status['last_snapshot'] or 'never'}")
+        print(f"Tracked apps:   {status['tracked_apps']}")
+        if not status["installed"]:
+            print("Run: wifi-tracker perapp install")
 
     def stop_daemon(self):
         """Stop daemon mode"""
@@ -622,8 +712,23 @@ class WiFiTracker:
             f"Alert set: {self.display_manager.format_bytes(threshold_bytes)} in {AlertManager.format_window(window_hours)}"
         )
 
+    def _request_shutdown(self):
+        """Called from signal handler — MUST be safe (no I/O, no blocking)."""
+        self.running = False
+
+    def _interruptible_sleep(self, duration: float) -> None:
+        """Sleep in short increments so we notice self.running going False."""
+        end = time.monotonic() + duration
+        while self.running:
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.1, remaining))
+
     def _cleanup(self):
         """Cleanup resources"""
+        if not self.running:
+            return
         self.running = False
         self.data_manager.save_data()
         self.process_manager.remove_pid_file()
@@ -822,6 +927,18 @@ def main():
     subparsers.add_parser("install-service", help="Install systemd service")
     subparsers.add_parser("remove-service", help="Remove systemd service")
 
+    perapp_p = subparsers.add_parser(
+        "perapp",
+        help="Accurate per-app collector (root conntrack service)",
+    )
+    perapp_sub = perapp_p.add_subparsers(dest="perapp_action")
+    perapp_install_p = perapp_sub.add_parser("install", help="Install root collector service")
+    perapp_install_p.add_argument(
+        "--interface", default="", help="WiFi interface (default: auto-detected)"
+    )
+    perapp_sub.add_parser("remove", help="Remove root collector service")
+    perapp_sub.add_parser("status", help="Show collector status")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -909,6 +1026,9 @@ def main():
             tracker.install_service()
         elif command == "remove-service":
             tracker.remove_service()
+        elif command == "perapp":
+            tracker._perapp_interface = getattr(args, "interface", "")
+            tracker.perapp_mode(getattr(args, "perapp_action", "status") or "status")
         elif command == "mark-safe":
             tracker.data_manager.mark_app_safe(args.ssid, args.app_name, args.always)
             mode = "always" if args.always else "once"

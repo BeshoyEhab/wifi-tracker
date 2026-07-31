@@ -249,6 +249,8 @@ Type=simple
 ExecStart={executable_path} {args}
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=10
+KillMode=process
 StandardOutput=journal
 StandardError=journal
 
@@ -347,22 +349,27 @@ WantedBy=default.target
             os.dup2(dev_null_w.fileno(), sys.stdout.fileno())
             os.dup2(dev_null_w.fileno(), sys.stderr.fileno())
 
-    def setup_signal_handlers(self, cleanup_callback=None) -> None:
+    def setup_signal_handlers(self, shutdown_flag_callback=None) -> None:
         """
         Setup signal handlers for graceful shutdown.
 
+        Signals only set a flag — they do NOT call cleanup or sys.exit().
+        The main loop checks the flag and exits naturally, which avoids
+        blocking I/O (os.fsync, flock) inside signal context during
+        logout/shutdown when the filesystem may already be being torn down.
+
         Args:
-            cleanup_callback (callable, optional): function to call on exit.
+            shutdown_flag_callback (callable, optional): sets self.running = False.
         """
 
         def signal_handler(signum, frame):
-            self._log_info(f"Received signal {signum}, shutting down gracefully...")
-            if cleanup_callback:
-                cleanup_callback()
-            sys.exit(0)
+            self._log_info(f"Received signal {signum}, initiating shutdown...")
+            if shutdown_flag_callback:
+                shutdown_flag_callback()
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGHUP, signal_handler)
         signal.signal(signal.SIGUSR1, signal_handler)
 
     def _log_info(self, message: str) -> None:

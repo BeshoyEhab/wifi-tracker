@@ -216,6 +216,107 @@ class TestDataManager(unittest.TestCase):
         self.assertTrue(self.data_manager.is_blocked_gateway(ssid, "192.168.1.2"))
         self.assertFalse(self.data_manager.is_blocked_gateway(ssid, "192.168.1.1"))
 
+    def test_update_app_usage_first_call_sets_baseline(self):
+        """First call to update_app_usage establishes baseline, no entry recorded"""
+        self.data_manager.update_usage("TestWiFi", 1000, 1000)
+        self.data_manager.update_app_usage("TestWiFi", "brave", 0, 10_000, pid=1234)
+
+        entries = self.data_manager.usage_data["TestWiFi"]["app_usage"]["brave"]["entries"]
+        self.assertEqual(entries, [])
+        pids = self.data_manager.usage_data["TestWiFi"]["app_usage"]["brave"]["pids"]
+        self.assertEqual(pids["1234"], {"sent": 0, "recv": 10_000})
+
+    def test_update_app_usage_scale_factors(self):
+        """scale_sent/scale_recv are applied to the delta before recording"""
+        self.data_manager.update_usage("TestWiFi", 1000, 1000)
+        self.data_manager.update_app_usage("TestWiFi", "brave", 0, 1_000_000, pid=1234)
+
+        # Delta of 10_000 bytes with scale_recv=0.1 -> 1_000 bytes recorded
+        self.data_manager.update_app_usage(
+            "TestWiFi", "brave", 0, 1_010_000, pid=1234, scale_sent=1.0, scale_recv=0.1
+        )
+
+        entries = self.data_manager.usage_data["TestWiFi"]["app_usage"]["brave"]["entries"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["recv"], 1_000)
+        # Next cycle tracks from raw cumulative values, not scaled ones
+        self.data_manager.update_app_usage(
+            "TestWiFi", "brave", 0, 1_020_000, pid=1234, scale_sent=1.0, scale_recv=0.5
+        )
+        entries = self.data_manager.usage_data["TestWiFi"]["app_usage"]["brave"]["entries"]
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[1]["recv"], 5_000)
+
+    def test_compute_app_scale_factors_caps_estimate(self):
+        """When the estimate exceeds the real network delta, scale it down"""
+        self.data_manager.update_usage("TestWiFi", 1000, 1000)
+        self.data_manager.update_app_usage("TestWiFi", "brave", 0, 1_000_000, pid=1234)
+
+        apps = [
+            {
+                "pid": 1234,
+                "name": "brave",
+                "bytes_sent": 0,
+                "bytes_recv": 2_000_000,  # +1_000_000 estimated delta
+            }
+        ]
+        scale_sent, scale_recv = self.data_manager.compute_app_scale_factors(
+            "TestWiFi", apps, real_rx_delta=100_000, real_tx_delta=0
+        )
+        self.assertEqual(scale_sent, 1.0)
+        self.assertAlmostEqual(scale_recv, 0.1)
+
+    def test_compute_app_scale_factors_under_estimate_unchanged(self):
+        """When the estimate is below the real network delta, no scaling"""
+        self.data_manager.update_usage("TestWiFi", 1000, 1000)
+        self.data_manager.update_app_usage("TestWiFi", "brave", 0, 1_000, pid=1234)
+
+        apps = [
+            {
+                "pid": 1234,
+                "name": "brave",
+                "bytes_sent": 0,
+                "bytes_recv": 2_000,  # +1_000 estimated delta
+            }
+        ]
+        scale_sent, scale_recv = self.data_manager.compute_app_scale_factors(
+            "TestWiFi", apps, real_rx_delta=10_000_000, real_tx_delta=5_000_000
+        )
+        self.assertEqual((scale_sent, scale_recv), (1.0, 1.0))
+
+    def test_compute_app_scale_factors_first_seen_pid(self):
+        """A first-seen PID contributes no estimate, so no scaling kicks in"""
+        self.data_manager.update_usage("TestWiFi", 1000, 1000)
+
+        apps = [
+            {
+                "pid": 9999,
+                "name": "brave",
+                "bytes_sent": 0,
+                "bytes_recv": 500_000_000,  # huge cumulative, but never seen before
+            }
+        ]
+        scale_sent, scale_recv = self.data_manager.compute_app_scale_factors(
+            "TestWiFi", apps, real_rx_delta=10_000, real_tx_delta=10_000
+        )
+        self.assertEqual((scale_sent, scale_recv), (1.0, 1.0))
+
+    def test_compute_app_scale_factors_without_real_delta(self):
+        """No real delta provided -> no scaling"""
+        self.data_manager.update_usage("TestWiFi", 1000, 1000)
+        self.data_manager.update_app_usage("TestWiFi", "brave", 0, 1_000_000, pid=1234)
+
+        apps = [
+            {
+                "pid": 1234,
+                "name": "brave",
+                "bytes_sent": 0,
+                "bytes_recv": 2_000_000,
+            }
+        ]
+        scale_sent, scale_recv = self.data_manager.compute_app_scale_factors("TestWiFi", apps)
+        self.assertEqual((scale_sent, scale_recv), (1.0, 1.0))
+
 
 if __name__ == "__main__":
     unittest.main()

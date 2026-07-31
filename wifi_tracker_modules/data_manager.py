@@ -680,6 +680,69 @@ class DataManager:
 
         return session_rx, session_tx
 
+    def compute_app_scale_factors(
+        self,
+        ssid: str,
+        apps: list[dict[str, Any]],
+        real_rx_delta: int | None = None,
+        real_tx_delta: int | None = None,
+    ) -> tuple[float, float]:
+        """
+        Compute per-cycle scaling factors so app usage estimates never
+        exceed the real network delta.
+
+        The /proc/{pid}/io based estimate (rchar - read_bytes) counts
+        non-storage reads (page cache, IPC pipes) as network traffic, which
+        massively overcounts for browsers. When the sum of estimates is
+        larger than what the interface actually moved, scale each app's
+        delta proportionally.
+
+        Args:
+            ssid: The SSID name.
+            apps: List of app dicts with pid/name/bytes_sent/bytes_recv.
+            real_rx_delta: Real interface RX delta since the last check.
+            real_tx_delta: Real interface TX delta since the last check.
+
+        Returns:
+            (scale_sent, scale_recv) to apply to this cycle's deltas.
+        """
+        if not apps or real_rx_delta is None or real_tx_delta is None:
+            return 1.0, 1.0
+
+        app_usage = self.usage_data.get(ssid, {}).get("app_usage", {})
+        est_sent = 0
+        est_recv = 0
+
+        for app in apps:
+            pid = app.get("pid", 0)
+            if not pid:
+                continue
+            name = app.get("name", "unknown")
+            key = str(pid)
+            prev = app_usage.get(name, {}).get("pids", {}).get(key, {})
+            prev_sent = prev.get("sent", 0)
+            prev_recv = prev.get("recv", 0)
+            bytes_sent = app.get("bytes_sent", 0)
+            bytes_recv = app.get("bytes_recv", 0)
+
+            # First time seeing this PID: no delta this cycle
+            if prev_sent == 0 and prev_recv == 0:
+                continue
+            if bytes_sent < prev_sent or bytes_recv < prev_recv:
+                est_sent += bytes_sent
+                est_recv += bytes_recv
+            else:
+                est_sent += max(0, bytes_sent - prev_sent)
+                est_recv += max(0, bytes_recv - prev_recv)
+
+        scale_sent = 1.0
+        scale_recv = 1.0
+        if est_recv > 0 and est_recv > real_rx_delta:
+            scale_recv = real_rx_delta / est_recv
+        if est_sent > 0 and est_sent > real_tx_delta:
+            scale_sent = real_tx_delta / est_sent
+        return scale_sent, scale_recv
+
     def update_app_usage(
         self,
         ssid: str,
@@ -688,6 +751,8 @@ class DataManager:
         bytes_recv: int,
         timestamp: datetime | None = None,
         pid: int = 0,
+        scale_sent: float = 1.0,
+        scale_recv: float = 1.0,
     ) -> None:
         """
         Track per-app network usage with a rolling 1-hour window.
@@ -701,6 +766,8 @@ class DataManager:
             bytes_recv: Cumulative bytes received by this app (from /proc/pid/io).
             timestamp: Current timestamp.
             pid: Process ID for accurate delta tracking.
+            scale_sent: Multiplier applied to this cycle's send delta.
+            scale_recv: Multiplier applied to this cycle's receive delta.
         """
         if ssid not in self.usage_data:
             return
@@ -734,13 +801,13 @@ class DataManager:
             pids[pid_key] = {"sent": bytes_sent, "recv": bytes_recv}
             return
 
-        delta_sent = max(0, bytes_sent - prev_sent)
-        delta_recv = max(0, bytes_recv - prev_recv)
+        delta_sent = max(0, bytes_sent - prev_sent) * scale_sent
+        delta_recv = max(0, bytes_recv - prev_recv) * scale_recv
 
         # Handle counter reset (process restarted)
         if bytes_sent < prev_sent or bytes_recv < prev_recv:
-            delta_sent = bytes_sent
-            delta_recv = bytes_recv
+            delta_sent = bytes_sent * scale_sent
+            delta_recv = bytes_recv * scale_recv
 
         # Save current cumulative for this PID
         pids[pid_key] = {"sent": bytes_sent, "recv": bytes_recv}
@@ -752,6 +819,50 @@ class DataManager:
                     "ts": timestamp.isoformat(),
                     "sent": delta_sent,
                     "recv": delta_recv,
+                }
+            )
+
+    def record_app_deltas(
+        self,
+        ssid: str,
+        deltas: dict[str, dict[str, int]],
+        timestamp: datetime | None = None,
+    ) -> None:
+        """
+        Record per-app network usage deltas supplied directly (e.g. from the
+        accurate root conntrack collector). Appends an entry per app with the
+        bytes already expressed as a delta for this cycle.
+
+        Args:
+            ssid: The SSID name.
+            deltas: Mapping of app name -> {"sent": int, "recv": int}.
+            timestamp: Current timestamp.
+        """
+        if ssid not in self.usage_data:
+            return
+
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        ssid_data = self.usage_data[ssid]
+        app_usage = ssid_data.setdefault("app_usage", {})
+        cutoff = timestamp - timedelta(days=Config.CLEANUP_DAYS)
+        cutoff_iso = cutoff.isoformat()
+
+        for name, delta in deltas.items():
+            sent = delta.get("sent", 0)
+            recv = delta.get("recv", 0)
+            if sent <= 0 and recv <= 0:
+                continue
+            if name not in app_usage:
+                app_usage[name] = {"entries": [], "pids": {}}
+            entries = app_usage[name]["entries"]
+            entries[:] = [e for e in entries if e.get("ts", "") > cutoff_iso]
+            entries.append(
+                {
+                    "ts": timestamp.isoformat(),
+                    "sent": sent,
+                    "recv": recv,
                 }
             )
 
