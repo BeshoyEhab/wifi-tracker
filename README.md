@@ -402,9 +402,15 @@ wifi-tracker/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
+│   ├── test_alert_manager.py
+│   ├── test_cli.py
+│   ├── test_completions.py
 │   ├── test_data_manager.py
+│   ├── test_display_manager.py
 │   ├── test_network_monitor.py
-│   └── test_perapp.py
+│   ├── test_notification_manager.py
+│   ├── test_perapp.py
+│   └── test_process_manager.py
 ├── .github/workflows/ci.yml
 ├── .pre-commit-config.yaml
 ├── .editorconfig
@@ -422,13 +428,19 @@ wifi-tracker/
 
 ```bash
 # Run all tests
-python -m pytest tests/
+uv run pytest tests/
 
 # With coverage
-python -m pytest tests/ --cov=wifi_tracker_modules
+uv run coverage run -m pytest tests/ && uv run coverage report
 ```
 
-Current test coverage: `DataManager` (storage CRUD, limits, gateways, app lists, app scaling), `NetworkMonitor` (interface detection, SSID, rates, gateway lookup), and `perapp`/`perapp_collector` (snapshot parsing, conntrack parsing, service management).
+Current test coverage (~68%): `DataManager` (storage CRUD, limits, gateways, app
+lists, app scaling), `NetworkMonitor` (interface detection, SSID, rates, gateway
+lookup), `perapp`/`perapp_collector` (snapshot parsing, conntrack parsing, service
+management), `cli.py` (command handlers + subcommand dispatch + completion engine),
+`process_manager` (PID lifecycle, instance discovery/killing, systemd service),
+`display_manager` (formatting, graphs, JSON), `alert_manager` (limit thresholds,
+size/window parsing), and `notification_manager` (sending, interactive prompts).
 
 ## Contributing
 

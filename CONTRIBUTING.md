@@ -41,14 +41,14 @@ Run these before pushing to avoid CI failures:
 
 ```bash
 # Linting
-ruff check .
-ruff format --check .
+uv run ruff check .
+uv run ruff format --check .
 
 # Type checking (optional but recommended)
-mypy wifi_tracker_modules/ --ignore-missing-imports
+uv run mypy wifi_tracker_modules/
 
 # Tests
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ## Making Changes
@@ -56,11 +56,11 @@ python -m pytest tests/ -v
 - Follow existing code style (no comments unless asked)
 - Run the linter before committing:
   ```bash
-  ruff check .
+  uv run ruff check .
   ```
 - Run tests:
   ```bash
-  python -m pytest tests/
+  uv run pytest tests/
   ```
 - Make sure both pass before submitting a PR
 

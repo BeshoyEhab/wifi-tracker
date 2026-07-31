@@ -55,6 +55,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `tests/test_notification_manager.py` (19 tests): notification sending,
   gateway trust and high-usage action prompts (notify-send.sh/zenity/fallback).
   Overall coverage improved from 58% to 68%.
+- README testing section and project tree updated to reflect the full test
+  suite; CONTRIBUTING now uses `uv run` for all dev commands.
 
 ## [0.1.2] - 2026-07-23
 
