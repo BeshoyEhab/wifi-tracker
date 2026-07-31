@@ -17,9 +17,9 @@
 - [x] CHANGELOG, CONTRIBUTING, pre-commit hooks
 
 ## v0.2.0 — Test Coverage & Polish
-- [ ] Unit tests for `cli.py` (arg parsing, subcommands)
+- [x] Unit tests for `cli.py` (arg parsing, subcommands)
+- [x] Unit tests for `process_manager.py` (daemon, PID)
 - [ ] Unit tests for `display_manager.py` (formatting, graph)
-- [ ] Unit tests for `process_manager.py` (daemon, PID)
 - [ ] Unit tests for `notification_manager.py`
 - [ ] Unit tests for `alert_manager.py` (limit checking, size parsing)
 - [ ] Unit tests for `app_manager.py` (app detection, tracking)

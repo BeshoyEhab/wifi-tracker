@@ -40,6 +40,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   emits one suggestion per line (like fish). Regression tests added in
   `tests/test_completions.py`.
 
+### Added
+- `tests/test_cli.py` (31 tests): `WiFiTracker` command handlers (limit,
+  remove-limit, usage-from, cleanup, alert, stop, top-apps, perapp, networks)
+  and `main()` subcommand dispatch incl. alias resolution.
+- `tests/test_process_manager.py` (20 tests): PID file lifecycle, instance
+  discovery, instance killing, systemd install/remove, process info, and top
+  network apps. Overall coverage improved from 48% to 58%.
+
 ## [0.1.2] - 2026-07-23
 
 ### Fixed
