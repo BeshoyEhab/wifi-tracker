@@ -15,7 +15,7 @@ Monitor WiFi usage with live rates, data caps, per-app tracking, rogue gateway d
 - **Interactive dashboard** — Rich-powered `watch` mode with live-updating panels
 - **Data limits** — daily, weekly, or monthly caps per SSID with 80%/100% desktop alerts
 - **High-usage alerts** — configurable threshold + time window (e.g. 2 GB in 1 hour)
-- **Per-app tracking** — top bandwidth consumers via `/proc/pid/io`, with safe/kill lists
+- **Accurate per-app tracking** — root conntrack collector (`perapp`) reads `/proc/net/nf_conntrack` for precise per-process traffic; `/proc/pid/io` fallback is scaled to the real interface delta so browser estimates never overcount
 - **Rogue gateway detection** — MITM protection: detects unknown gateways, prompts to trust/block, OUI vendor lookup
 - **Historical graphs** — ASCII bar charts at 1h/24h/7d/30d/12m granularity
 - **One-line status** — `today` shows today's consumption (midnight→now) with mean rate and daily limit %
@@ -75,10 +75,13 @@ wifi-tracker limit HomeWiFi 2GB daily
 # Configure high-usage alert
 wifi-tracker alert 500MB 1h
 
+# Install accurate per-app collector (root conntrack service, prompts for sudo)
+wifi-tracker perapp install
+
 # Show usage graph
 wifi-tracker graph
 
-# View top apps
+# View top apps (uses collector data when available)
 wifi-tracker top-apps
 
 # Stop the daemon
@@ -158,6 +161,9 @@ graph  → g
 | `cleanup [DAYS]` | Purge daily records older than N days (default: 90) |
 | `install-service` | Install user systemd unit (`~/.config/systemd/user/wifi-tracker.service`) |
 | `remove-service` | Stop, disable, and remove the systemd unit |
+| `perapp install [--interface IFACE]` | Install root conntrack collector systemd service (auto-elevates via sudo) |
+| `perapp remove` | Stop and remove the root collector service |
+| `perapp status` | Show collector install state, service status, last snapshot, tracked apps |
 
 ## Architecture
 
@@ -172,12 +178,14 @@ wifi_tracker_modules/
 ├── display_manager.py       # Rich TUI, ASCII graph, one-line status, JSON formatters
 ├── alert_manager.py         # Limit checks, high-usage alerts, daily summaries
 ├── notification_manager.py  # Desktop notifications + interactive dialogs
-└── app_manager.py           # New-app detection, high-usage app alerts
+├── app_manager.py           # New-app detection, high-usage app alerts
+├── perapp.py                # Root collector reader + service management (perapp subcommand)
+└── perapp_collector.py      # Root conntrack collector (systemd system service)
 ```
 
 ### Module Details
 
-**`cli.py`** — `WiFiTracker` class orchestrates all modes. Parses subcommands via `argparse`, resolves aliases, creates module instances, dispatches to mode handlers (`daemon_mode`, `watch_mode`, `status_mode`, etc.). Shell completion engine in `_handle_completion`.
+**`cli.py`** — `WiFiTracker` class orchestrates all modes. Parses subcommands via `argparse`, resolves aliases, creates module instances, dispatches to mode handlers (`daemon_mode`, `watch_mode`, `status_mode`, etc.). Shell completion engine in `_handle_completion`, backed by a decorator-registered handler table (`_COMPLETERS`).
 
 **`config.py`** — `Config` class with static methods for XDG-compliant paths:
 - `get_data_file()` → `~/.local/share/wifi-tracker/wifi_usage.json`
@@ -191,6 +199,8 @@ Constants: `SAVE_INTERVAL=0.5`, `CLEANUP_DAYS=90`, `MINUTELY_MAX_ENTRIES=120`, `
 **`data_manager.py`** — `DataManager` handles all JSON persistence with `fcntl` file locking:
 - Usage data: per-SSID tracking of `total_rx/tx`, `daily` dict (keyed by `YYYY-MM-DD`), `hourly`, `minutely`, sessions, peaks
 - Per-app tracking: rollup entries per PID with delta accumulation and cutoff cleanup
+- `compute_app_scale_factors()` — scales per-app estimates so their sum never exceeds the real interface delta (prevents `/proc/pid/io` overcounting)
+- `record_app_deltas()` — stores deltas sourced from the accurate root conntrack collector
 - Limits: load/save/update with notification flags (`notified_80`, `notified_100`)
 - Gateway lists: `known_gateways`, `blocked_gateways` with IP/MAC/vendor/timestamp
 - App lists: `safe_apps`, `safe_apps_onetime`, `kill_apps`, `kill_apps_onetime`
@@ -204,8 +214,8 @@ Constants: `SAVE_INTERVAL=0.5`, `CLEANUP_DAYS=90`, `MINUTELY_MAX_ENTRIES=120`, `
 - Instance management: `find_all_instances`, `kill_all_instances` (SIGTERM → wait → SIGKILL)
 - PID file: create, remove, staleness check
 - systemd: install/remove user service
-- Top apps: iterates `psutil.net_connections("inet")`, reads `/proc/pid/io` for `rchar/wchar` minus `read_bytes/write_bytes` as network-IO approximation
-- Signal handlers: SIGTERM, SIGINT, SIGUSR1 → graceful cleanup
+- Top apps: iterates `psutil.net_connections("inet")`, reads `/proc/pid/io` for `rchar/wchar` minus `read_bytes/write_bytes` as network-IO approximation (heuristic fallback when the conntrack collector is unavailable)
+- Signal handlers: SIGTERM, SIGINT, SIGHUP, SIGUSR1 set a shutdown flag that the main loop honors (no blocking I/O in signal context)
 - Logging: `_log_info` / `_log_error` to `daemon.log` / `error.log`
 
 **`display_manager.py`** — `DisplayManager` provides:
@@ -222,7 +232,11 @@ Constants: `SAVE_INTERVAL=0.5`, `CLEANUP_DAYS=90`, `MINUTELY_MAX_ENTRIES=120`, `
 
 **`notification_manager.py`** — `NotificationManager` wraps `notify-send` (plain notifications), `notify-send.sh` (interactive action buttons for trust/block and safe/kill), and `zenity` (fallback GUI dialogs). Priority: `notify-send.sh` > `zenity` > plain notification. Holds a global singleton `notifier`.
 
-**`app_manager.py`** — `AppManager` tracks new apps (first network access alerts after a 5-app threshold) and checks high-usage apps against the configured alert threshold, respecting safe/kill lists.
+**`app_manager.py`** — `AppManager` tracks new apps (first network access alerts after a 5-app threshold) and checks high-usage apps against the configured alert threshold, respecting safe/kill lists. It prefers accurate per-app data from the root conntrack collector (`_record_from_collector`) and falls back to the scaled `/proc/pid/io` heuristic.
+
+**`perapp.py`** — reader + service manager for the accurate per-app collector. `read_snapshot()` loads the fresh cumulative snapshot from `/run/wifi-tracker/per_app.json`; `install_system_service()`/`remove_system_service()` manage the systemd system unit and enable `nf_conntrack_acct`. `install`/`remove` auto-elevate via `sudo` with `PYTHONDONTWRITEBYTECODE=1` so the tool's own uv install dir never accumulates root-owned `__pycache__` files.
+
+**`perapp_collector.py`** — stdlib-only root service that parses `/proc/net/nf_conntrack`, maps flows to PIDs via local sockets, and atomically writes cumulative per-app byte counts to `/run/wifi-tracker/per_app.json` (mode 0644). Gracefully degrades when run without root (used for local testing).
 
 ## Data Flow
 
@@ -247,7 +261,7 @@ iwgetid/iwconfig/nmcli         /proc/net/dev
                                zenity)
 ```
 
-In daemon mode, measurements are collected every `interval` seconds (default 0.5). Deltas are accumulated into daily/hourly/minutely buckets. Per-app data is sampled every 60 seconds via `AppManager.check_high_usage_apps()`. Data is flushed to disk every `SAVE_INTERVAL` seconds.
+In daemon mode, measurements are collected every `interval` seconds (default 0.5). Deltas are accumulated into daily/hourly/minutely buckets. Per-app data is sampled every 60 seconds via `AppManager.check_high_usage_apps()` — it prefers the root conntrack collector snapshot (when installed and fresh) and otherwise falls back to `/proc/pid/io` estimates scaled to the real interface delta. Data is flushed to disk every `SAVE_INTERVAL` seconds.
 
 ## Data Storage
 
@@ -261,6 +275,7 @@ All paths respect `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, and `XDG
 | Daemon log | `~/.cache/wifi-tracker/daemon.log` | INFO-level daemon messages |
 | Error log | `~/.cache/wifi-tracker/error.log` | ERROR-level messages (monitoring loop, file I/O, etc.) |
 | PID file | `$XDG_RUNTIME_DIR/wifi-tracker/daemon.pid` | Daemon process ID for `stop` and staleness checks |
+| Per-app snapshot | `/run/wifi-tracker/per_app.json` | Cumulative per-app byte counts written by the root conntrack collector (mode 0644) |
 
 ### JSON Structure (abbreviated)
 
@@ -325,7 +340,7 @@ Three completion files are provided in `completions/`:
 - `completions/wifi-tracker.fish` — fish
 
 The `install.sh` script copies them to the standard locations automatically.
-The embedded completion engine also provides dynamic suggestions for SSID names and running app names.
+All three are **fully dynamic**: every command, flag, and argument suggestion is generated live by the CLI's embedded completion engine (`wifi-tracker --complete <shell> ...`), so completions never go stale when new commands or flags are added. This includes SSID names, running app names, data-limit sizes, cleanup day counts, and `perapp` subcommands.
 
 ## Desktop Notifications
 
@@ -360,7 +375,8 @@ Use `--quiet` / `-q` to suppress all notifications.
 | `notify-send` | Desktop notifications | Optional |
 | `notify-send.sh` | Interactive action buttons in notifications | Optional |
 | `zenity` | Alternative interactive dialogs | Optional |
-| `systemctl` | Systemd service management | For `install-service` |
+| `systemctl` | Systemd service management | For `install-service` / `perapp` |
+| `conntrack` / `nf_conntrack` | Per-app network accounting (`/proc/net/nf_conntrack`) | For `perapp install` (root, enables `nf_conntrack_acct`) |
 
 ## Project Structure
 
@@ -376,7 +392,9 @@ wifi-tracker/
 │   ├── display_manager.py
 │   ├── alert_manager.py
 │   ├── notification_manager.py
-│   └── app_manager.py
+│   ├── app_manager.py
+│   ├── perapp.py
+│   └── perapp_collector.py
 ├── completions/
 │   ├── wifi-tracker.bash
 │   ├── _wifi-tracker
@@ -385,7 +403,8 @@ wifi-tracker/
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_data_manager.py
-│   └── test_network_monitor.py
+│   ├── test_network_monitor.py
+│   └── test_perapp.py
 ├── .github/workflows/ci.yml
 ├── .pre-commit-config.yaml
 ├── .editorconfig
@@ -409,7 +428,7 @@ python -m pytest tests/
 python -m pytest tests/ --cov=wifi_tracker_modules
 ```
 
-Current test coverage: `DataManager` (storage CRUD, limits, gateways, app lists) and `NetworkMonitor` (interface detection, SSID, rates, gateway lookup).
+Current test coverage: `DataManager` (storage CRUD, limits, gateways, app lists, app scaling), `NetworkMonitor` (interface detection, SSID, rates, gateway lookup), and `perapp`/`perapp_collector` (snapshot parsing, conntrack parsing, service management).
 
 ## Contributing
 

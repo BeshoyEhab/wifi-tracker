@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -1222,6 +1223,237 @@ def main():
         sys.exit(1)
 
 
+_ALL_COMMANDS = [
+    "daemon",
+    "watch",
+    "status",
+    "today",
+    "graph",
+    "top-apps",
+    "networks",
+    "limit",
+    "remove-limit",
+    "usage-from",
+    "alert",
+    "trust-gateway",
+    "trusted-gateways",
+    "mark-safe",
+    "safe-apps",
+    "kill-app",
+    "kill-list",
+    "stop",
+    "cleanup",
+    "install-service",
+    "remove-service",
+    "perapp",
+    "block-gateway",
+    "blocked-gateways",
+    "unblock-gateway",
+    "untrust-gateway",
+]
+
+_COMMAND_FLAGS = {
+    "status": ["--all", "--from-date", "--to-date", "--range"],
+    "graph": ["--range", "--from-date", "--to-date"],
+    "today": ["--range"],
+    "daemon": ["--interface", "--interval"],
+    "watch": ["--interface", "--interval"],
+    "perapp": ["--interface"],
+}
+
+_GLOBAL_FLAGS = ["--interface", "-i", "--interval", "--quiet", "-q", "--json", "-j", "--version"]
+
+
+class _CompletionContext:
+    """State passed to each completion handler."""
+
+    __slots__ = ("cur", "words", "prev", "cmd", "argc", "networks", "suggestions")
+
+    def __init__(
+        self,
+        cur: str,
+        words: list[str],
+        prev: str,
+        cmd: str,
+        argc: int,
+        networks: list[str],
+    ) -> None:
+        self.cur = cur
+        self.words = words
+        self.prev = prev
+        self.cmd = cmd
+        self.argc = argc
+        self.networks = networks
+        self.suggestions: list[str] = []
+
+
+_COMPLETERS: list[tuple[Callable[[_CompletionContext], bool], tuple[str, ...]]] = []
+
+
+def _completer(
+    *commands: str,
+) -> Callable[[Callable[[_CompletionContext], bool]], Callable[[_CompletionContext], bool]]:
+    """
+    Decorator registering a shell completion handler.
+
+    Each handler receives a ``_CompletionContext`` and returns True when it
+    handled the completion (stopping further handlers). Multiple commands can
+    share one handler by passing them as arguments. Handlers are tried in
+    registration order, so decorate most-specific cases first.
+    """
+
+    def decorator(fn: Callable[[_CompletionContext], bool]) -> Callable[[_CompletionContext], bool]:
+        _COMPLETERS.append((fn, commands))
+        return fn
+
+    return decorator
+
+
+@_completer("status")
+def _complete_status_flags(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for hint in ["--all", "--from-date", "--to-date", "--range"]:
+        if hint.startswith(ctx.cur):
+            ctx.suggestions.append(hint)
+    return True
+
+
+@_completer("graph")
+def _complete_graph_flags(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for hint in ["--range"]:
+        if hint.startswith(ctx.cur):
+            ctx.suggestions.append(hint)
+    return True
+
+
+@_completer("today")
+def _complete_today_flags(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for hint in ["--range"]:
+        if hint.startswith(ctx.cur):
+            ctx.suggestions.append(hint)
+    return True
+
+
+@_completer("limit", "remove-limit", "usage-from", "mark-safe", "kill-app", "trust-gateway")
+def _complete_ssid_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for net in ctx.networks:
+        if net.lower().startswith(ctx.cur):
+            ctx.suggestions.append(net)
+    return True
+
+
+@_completer("safe-apps", "kill-list", "trusted-gateways")
+def _complete_optional_ssid_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for net in ctx.networks:
+        if net.lower().startswith(ctx.cur):
+            ctx.suggestions.append(net)
+    return True
+
+
+@_completer("mark-safe", "kill-app")
+def _complete_app_name_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 2:
+        return False
+    try:
+        from .process_manager import ProcessManager
+
+        pm = ProcessManager("wifi-tracker")
+        apps = pm.get_top_network_apps(limit=30)
+        for app in apps:
+            name = app.get("name", "")
+            if name.startswith(ctx.cur):
+                ctx.suggestions.append(name)
+    except Exception:
+        pass
+    return True
+
+
+@_completer("limit")
+def _complete_limit_size_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 2:
+        return False
+    for hint in ["1GB", "2GB", "5GB", "10GB", "500MB"]:
+        if hint.lower().startswith(ctx.cur):
+            ctx.suggestions.append(hint)
+    return True
+
+
+@_completer("limit")
+def _complete_limit_interval_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 3:
+        return False
+    for interval in ["daily", "weekly", "monthly"]:
+        if interval.startswith(ctx.cur):
+            ctx.suggestions.append(interval)
+    return True
+
+
+@_completer("alert")
+def _complete_alert_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for hint in ["show", "1GB", "2GB", "5GB"]:
+        if hint.lower().startswith(ctx.cur):
+            ctx.suggestions.append(hint)
+    return True
+
+
+@_completer("perapp")
+def _complete_perapp_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for sub in ["install", "remove", "status"]:
+        if sub.startswith(ctx.cur):
+            ctx.suggestions.append(sub)
+    return True
+
+
+@_completer("cleanup")
+def _complete_cleanup_arg(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    for hint in ["30", "60", "90", "365"]:
+        if hint.startswith(ctx.cur):
+            ctx.suggestions.append(hint)
+    return True
+
+
+@_completer("stop", "install-service", "remove-service", "networks", "top-apps")
+def _complete_no_arg(ctx: _CompletionContext) -> bool:
+    return ctx.argc == 1
+
+
+def _complete_flag_values(ctx: _CompletionContext) -> bool:
+    if ctx.prev == "--range":
+        for hint in ["1h", "24h", "7d", "30d", "12m"]:
+            if hint.startswith(ctx.cur):
+                ctx.suggestions.append(hint)
+        return True
+    if ctx.prev in ("--from-date", "--to-date"):
+        for hint in ["today", "yesterday"]:
+            if hint.startswith(ctx.cur):
+                ctx.suggestions.append(hint)
+        return True
+    if ctx.prev in ("--interface", "-i"):
+        import glob
+
+        for iface in glob.glob("/sys/class/net/*"):
+            name = iface.split("/")[-1]
+            if name.startswith(ctx.cur):
+                ctx.suggestions.append(name)
+        return True
+    return False
+
+
 def _handle_completion(shell: str, comp_word: str) -> None:
     """Output shell completion suggestions based on context."""
     all_words = os.environ.get("COMP_WORDS", comp_word).split()
@@ -1260,160 +1492,39 @@ def _handle_completion(shell: str, comp_word: str) -> None:
     cmd = words[0].lower() if words else ""
     argc = len(words)  # number of complete args (excluding current word)
 
+    ctx = _CompletionContext(cur, words, prev, cmd, argc, networks)
+
     suggestions = []
 
     # If cur starts with --, suggest flags for the current command
     if cur.startswith("--") or cur.startswith("-"):
-        flag_map = {
-            "status": ["--all", "--from-date", "--to-date", "--range"],
-            "graph": ["--range", "--from-date", "--to-date"],
-            "today": ["--range"],
-            "daemon": ["--interface", "--interval"],
-            "watch": ["--interface", "--interval"],
-        }
-        flags = flag_map.get(cmd, [])
+        flags = _GLOBAL_FLAGS + _COMMAND_FLAGS.get(cmd, [])
         for f in flags:
             if f.startswith(cur):
                 suggestions.append(f)
     elif argc == 0:
         # No subcommand: show commands only
-        all_cmds = [
-            "daemon",
-            "watch",
-            "status",
-            "today",
-            "graph",
-            "top-apps",
-            "networks",
-            "limit",
-            "remove-limit",
-            "usage-from",
-            "alert",
-            "trust-gateway",
-            "trusted-gateways",
-            "mark-safe",
-            "safe-apps",
-            "kill-app",
-            "kill-list",
-            "stop",
-            "cleanup",
-            "install-service",
-            "remove-service",
-        ]
-        for c in all_cmds:
+        for c in _ALL_COMMANDS:
             if c.startswith(cur):
                 suggestions.append(c)
-    elif argc == 1 and cmd in (
-        "limit",
-        "remove-limit",
-        "usage-from",
-        "mark-safe",
-        "kill-app",
-        "trust-gateway",
-    ):
-        # SSID arg
-        for net in networks:
-            if net.lower().startswith(cur):
-                suggestions.append(net)
-    elif argc == 1 and cmd in ("safe-apps", "kill-list", "trusted-gateways"):
-        # Optional SSID
-        for net in networks:
-            if net.lower().startswith(cur):
-                suggestions.append(net)
-    elif argc == 2 and cmd in ("mark-safe", "kill-app"):
-        # App name arg
-        try:
-            from .process_manager import ProcessManager
-
-            pm = ProcessManager("wifi-tracker")
-            apps = pm.get_top_network_apps(limit=30)
-            for app in apps:
-                name = app.get("name", "")
-                if name.startswith(cur):
-                    suggestions.append(name)
-        except Exception:
-            pass
-    elif argc == 2 and cmd == "limit":
-        # Size arg
-        for hint in ["1GB", "2GB", "5GB", "10GB", "500MB"]:
-            if hint.lower().startswith(cur):
-                suggestions.append(hint)
-    elif argc == 3 and cmd == "limit":
-        # Interval arg
-        for interval in ["daily", "weekly", "monthly"]:
-            if interval.startswith(cur):
-                suggestions.append(interval)
-    elif argc == 1 and cmd == "alert":
-        for hint in ["show", "1GB", "2GB", "5GB"]:
-            if hint.lower().startswith(cur):
-                suggestions.append(hint)
-    elif argc == 1 and cmd in ("today",):
-        for hint in ["--range"]:
-            if hint.startswith(cur):
-                suggestions.append(hint)
-    elif argc == 1 and cmd in (
-        "stop",
-        "install-service",
-        "remove-service",
-        "networks",
-        "top-apps",
-    ):
-        pass
-    elif argc == 1 and cmd == "status":
-        for hint in ["--all", "--from-date", "--to-date", "--range"]:
-            if hint.startswith(cur):
-                suggestions.append(hint)
-    elif argc == 1 and cmd == "graph":
-        for hint in ["--range"]:
-            if hint.startswith(cur):
-                suggestions.append(hint)
-    elif argc == 1 and cmd == "cleanup":
-        for hint in ["30", "60", "90", "365"]:
-            if hint.startswith(cur):
-                suggestions.append(hint)
-    elif prev == "--range":
-        for hint in ["1h", "24h", "7d", "30d", "12m"]:
-            if hint.startswith(cur):
-                suggestions.append(hint)
-    elif prev in ("--from-date", "--to-date"):
-        for hint in ["today", "yesterday"]:
-            if hint.startswith(cur):
-                suggestions.append(hint)
-    elif prev in ("--interface", "-i"):
-        import glob
-
-        for iface in glob.glob("/sys/class/net/*"):
-            name = iface.split("/")[-1]
-            if name.startswith(cur):
-                suggestions.append(name)
     else:
-        # Fallback: show commands
-        all_cmds = [
-            "daemon",
-            "watch",
-            "status",
-            "today",
-            "graph",
-            "top-apps",
-            "networks",
-            "limit",
-            "remove-limit",
-            "usage-from",
-            "alert",
-            "trust-gateway",
-            "trusted-gateways",
-            "mark-safe",
-            "safe-apps",
-            "kill-app",
-            "kill-list",
-            "stop",
-            "cleanup",
-            "install-service",
-            "remove-service",
-        ]
-        for c in all_cmds:
-            if c.startswith(cur):
-                suggestions.append(c)
+        # Try registered per-command handlers in order
+        handled = False
+        for handler, commands in _COMPLETERS:
+            if cmd not in commands:
+                continue
+            if handler(ctx):
+                suggestions = ctx.suggestions
+                handled = True
+                break
+        if not handled:
+            # Fall through to flag values, then to the command list
+            if _complete_flag_values(ctx):
+                suggestions = ctx.suggestions
+            else:
+                for c in _ALL_COMMANDS:
+                    if c.startswith(cur):
+                        suggestions.append(c)
 
     # Output suggestions
     result = sorted(set(suggestions))

@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.3] - 2026-07-31
+
+### Added
+- Accurate per-app network tracking via a root conntrack collector (`perapp`
+  subcommand). The collector runs as a systemd system service, parses
+  `/proc/net/nf_conntrack`, and writes a cumulative per-app snapshot to
+  `/run/wifi-tracker/per_app.json` (mode 0644) that the user daemon reads.
+  High-usage alerts and `top-apps` now prefer this data.
+- `perapp install` / `perapp remove` / `perapp status` commands. Install and
+  remove auto-elevate via `sudo` with `PYTHONDONTWRITEBYTECODE=1`, so the tool's
+  uv install directory never accumulates root-owned `__pycache__` files that
+  would block `uv tool install`.
+
+### Changed
+- Per-app estimates from `/proc/pid/io` (the fallback path) are now scaled so
+  their sum never exceeds the real interface delta. The old `rchar - read_bytes`
+  approximation overcounted browser traffic (page cache, IPC) by ~30x, which
+  produced false high-usage alerts (e.g. "Brave used 1GB in 1 minute").
+- Daemon shutdown signals now set a flag that the main loop honors instead of
+  calling cleanup/`sys.exit()` inside the signal handler, avoiding blocking I/O
+  during logout/shutdown.
+- User systemd service gains `TimeoutStopSec=10` and `KillMode=process`.
+- CI updated to Node 24 based actions (`actions/checkout@v5`,
+  `actions/setup-python@v6`), removing the Node 20 deprecation warning.
+- Shell completions are now fully dynamic. The completion handlers in `cli.py`
+  were refactored into a decorator-registered table (`_completer(...)`), and the
+  fish completion script now delegates every suggestion to
+  `wifi-tracker --complete ...` like bash/zsh already did — no more hardcoded
+  `complete -c` lines that can drift out of date with the CLI.
+
 ## [0.1.2] - 2026-07-23
 
 ### Fixed
