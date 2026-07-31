@@ -1531,8 +1531,8 @@ def _handle_completion(shell: str, comp_word: str) -> None:
     if not result:
         return
 
-    if shell == "fish":
-        # Fish needs one suggestion per line
+    if shell in ("fish", "zsh"):
+        # Fish and zsh need one suggestion per line
         print("\n".join(result))
     else:
         # Columnar output for bash/zsh

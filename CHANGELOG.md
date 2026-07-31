@@ -34,6 +34,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `wifi-tracker --complete ...` like bash/zsh already did — no more hardcoded
   `complete -c` lines that can drift out of date with the CLI.
 
+### Fixed
+- zsh completions returned columnar (space-padded) output that the completion
+  script split on newlines, producing garbage suggestions. `--complete zsh` now
+  emits one suggestion per line (like fish). Regression tests added in
+  `tests/test_completions.py`.
+
 ## [0.1.2] - 2026-07-23
 
 ### Fixed
