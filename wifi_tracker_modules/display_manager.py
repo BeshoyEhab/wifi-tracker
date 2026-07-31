@@ -449,6 +449,48 @@ class DisplayManager:
             "  [dim]Note: Per-app bytes approximated via rchar-read_bytes (excludes disk I/O).[/dim]"
         )
 
+    def print_app_commands(self, app_name: str, commands: dict) -> None:
+        """Print the per-command usage breakdown for a single app."""
+        rows = []
+        for cmd, counts in commands.items():
+            sent = counts.get("sent", 0)
+            recv = counts.get("recv", 0)
+            rows.append((cmd, sent, recv, sent + recv))
+        rows.sort(key=lambda r: r[3], reverse=True)
+
+        if not rows:
+            if self.console:
+                self.console.print(f"[dim]No command data for {app_name} yet.[/dim]")
+            else:
+                print(f"No command data for {app_name} yet.")
+            return
+
+        if not RICH_AVAILABLE:
+            print(f"\nCommands for {app_name}:")
+            print(f"{'Command':<40} {'Recv':>10}  {'Sent':>10}  {'Total':>10}")
+            print("-" * 74)
+            for cmd, sent, recv, total in rows:
+                print(
+                    f"{cmd:<40} {self.format_bytes(recv):>10}  {self.format_bytes(sent):>10}"
+                    f"  {self.format_bytes(total):>10}"
+                )
+            print("  Note: Cumulative since the root conntrack collector started.")
+            return
+
+        table = Table(title=f"Command Usage — {app_name}", box=ROUNDED, expand=True)
+        table.add_column("Command", style="bold white")
+        table.add_column("Recv", justify="right", style="green")
+        table.add_column("Sent", justify="right", style="yellow")
+        table.add_column("Total", justify="right", style="bold")
+
+        for cmd, sent, recv, total in rows:
+            table.add_row(
+                cmd, self.format_bytes(recv), self.format_bytes(sent), self.format_bytes(total)
+            )
+
+        self.console.print(table)
+        self.console.print("  [dim]Cumulative since the root conntrack collector started.[/dim]")
+
     def print_detailed_stats(
         self,
         usage_data: dict[str, Any],

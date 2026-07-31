@@ -170,6 +170,26 @@ def process_name(pid):
         return "unknown"
 
 
+def process_command(pid):
+    """Get a short command-line grouping key for a PID.
+
+    Reads /proc/<pid>/cmdline and returns the executable basename plus its
+    first non-flag argument (e.g. "uv add", "uv sync"). Falls back to the
+    process name when the cmdline is empty or unreadable.
+    """
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            raw = f.read().split(b"\x00")
+        parts = [p.decode(errors="replace") for p in raw if p]
+    except (OSError, ValueError):
+        return process_name(pid)
+    if not parts:
+        return process_name(pid)
+    base = os.path.basename(parts[0]) or process_name(pid)
+    key = f"{base} {parts[1]}" if len(parts) >= 2 and not parts[1].startswith("-") else base
+    return key[:60]
+
+
 def flow_to_socket(proto, t0, t1, index):
     """Map a conntrack flow to a local socket.
 
@@ -276,9 +296,14 @@ class Collector:
             else:
                 sent, recv = d1, d0
             if sent or recv:
-                entry = self.app_cum.setdefault(process_name(pid), {"sent": 0, "recv": 0})
+                name = process_name(pid)
+                entry = self.app_cum.setdefault(name, {"sent": 0, "recv": 0, "commands": {}})
                 entry["sent"] += sent
                 entry["recv"] += recv
+                cmd = process_command(pid)
+                cmd_entry = entry["commands"].setdefault(cmd, {"sent": 0, "recv": 0})
+                cmd_entry["sent"] += sent
+                cmd_entry["recv"] += recv
 
     def write_output(self):
         data = {

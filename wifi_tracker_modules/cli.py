@@ -488,11 +488,20 @@ class WiFiTracker:
             self.data_manager.limits_data,
         )
 
-    def top_apps_mode(self) -> None:
-        """Show top 10 applications"""
+    def top_apps_mode(self, app_name: str = "") -> None:
+        """Show top applications, or the command breakdown for one app."""
         try:
             ssid = self.monitor.get_current_ssid()
             snapshot = perapp.read_snapshot()
+            if snapshot and app_name:
+                self._show_app_commands(snapshot, app_name)
+                return
+            if app_name and not snapshot:
+                print(
+                    "No collector snapshot available — command breakdown requires the "
+                    "root collector: wifi-tracker perapp install"
+                )
+                return
             if snapshot:
                 apps = [
                     {
@@ -510,7 +519,8 @@ class WiFiTracker:
                 self.display_manager.print_top_network_apps(apps)
                 if self.display_manager.console:
                     self.display_manager.console.print(
-                        "  [dim]Data from root conntrack collector (accurate).[/dim]"
+                        "  [dim]Data from root conntrack collector (accurate). "
+                        "Use: wifi-tracker top-apps <app> for command breakdown.[/dim]"
                     )
             else:
                 top_apps = self.process_manager.get_top_network_apps(limit=10, ssid=ssid)
@@ -531,6 +541,27 @@ class WiFiTracker:
                     )
         except Exception as e:
             print(f"❌ Error getting top apps: {e}")
+
+    def _show_app_commands(self, snapshot: dict, app_name: str) -> None:
+        """Print the command breakdown for one app from a collector snapshot."""
+        apps = snapshot.get("apps", {})
+        match = next((n for n in apps if n == app_name), None)
+        if match is None:
+            match = next(
+                (n for n in apps if n.lower() == app_name.lower()),
+                None,
+            )
+        if match is None:
+            print(f"App '{app_name}' not found in collector snapshot.")
+            return
+        commands = apps[match].get("commands") or {}
+        if not commands:
+            print(
+                f"No command breakdown for '{match}' yet — restart the collector to start "
+                "recording per-command usage."
+            )
+            return
+        self.display_manager.print_app_commands(match, commands)
 
     def perapp_mode(self, action: str) -> None:
         """Handle the perapp subcommand (accurate per-app collector)."""
@@ -802,6 +833,7 @@ def main():
     wifi-tracker status --range 30d             Last 30 days stats
     wifi-tracker trust-gateway HomeWiFi 10.0.0.1 Trust your router
     wifi-tracker mark-safe HomeWiFi firefox --always  Always allow firefox
+    wifi-tracker top-apps uv                    Show uv's command usage (uv add, uv sync…)
     wifi-tracker today                          Quick status check
 """,
     )
@@ -853,7 +885,12 @@ def main():
         help="Time range (default: 24h)",
     )
 
-    subparsers.add_parser("top-apps", help="Show apps using the network")
+    top_apps_p = subparsers.add_parser("top-apps", help="Show apps using the network")
+    top_apps_p.add_argument(
+        "app",
+        nargs="?",
+        help="App name to show its command breakdown (requires root collector)",
+    )
     subparsers.add_parser("networks", help="Show saved networks")
 
     # ── Limits & Alerts ─────────────────────────────────────────
@@ -1008,7 +1045,7 @@ def main():
             else:
                 tracker.status_mode(custom_start_date, custom_end_date)
         elif command == "top-apps":
-            tracker.top_apps_mode()
+            tracker.top_apps_mode(getattr(args, "app", "") or "")
         elif command == "stop":
             tracker.stop_daemon()
         elif command == "networks":
@@ -1427,7 +1464,23 @@ def _complete_cleanup_arg(ctx: _CompletionContext) -> bool:
     return True
 
 
-@_completer("stop", "install-service", "remove-service", "networks", "top-apps")
+@_completer("top-apps")
+def _complete_perapp_app_name(ctx: _CompletionContext) -> bool:
+    if ctx.argc != 1:
+        return False
+    try:
+        from . import perapp
+
+        snapshot = perapp.read_snapshot(max_age=3600)
+        for name in snapshot.get("apps") or {}:
+            if name.startswith(ctx.cur):
+                ctx.suggestions.append(name)
+    except Exception:
+        pass
+    return True
+
+
+@_completer("stop", "install-service", "remove-service", "networks")
 def _complete_no_arg(ctx: _CompletionContext) -> bool:
     return ctx.argc == 1
 

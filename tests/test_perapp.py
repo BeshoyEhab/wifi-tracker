@@ -5,7 +5,9 @@ import sys
 import tempfile
 import time
 import unittest
+from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -113,6 +115,7 @@ class TestCollectorAccumulation(unittest.TestCase):
         original_read_sockets = pc.read_sockets
         original_pid_map = pc.build_pid_map
         original_process_name = pc.process_name
+        original_process_command = pc.process_command
         try:
 
             def fake_flows_1():
@@ -122,6 +125,7 @@ class TestCollectorAccumulation(unittest.TestCase):
             pc.read_sockets = lambda: sockets
             pc.build_pid_map = lambda: {5678: 1234}
             pc.process_name = lambda pid: "brave"
+            pc.process_command = lambda pid: "brave"
 
             # First sample: baselines all flows, records nothing
             collector.sample()
@@ -135,12 +139,110 @@ class TestCollectorAccumulation(unittest.TestCase):
 
             pc.read_flows = fake_flows_2
             collector.sample()
-            self.assertEqual(collector.app_cum, {"brave": {"sent": 1000, "recv": 10000}})
+            self.assertEqual(
+                collector.app_cum,
+                {
+                    "brave": {
+                        "sent": 1000,
+                        "recv": 10000,
+                        "commands": {"brave": {"sent": 1000, "recv": 10000}},
+                    }
+                },
+            )
         finally:
             pc.read_flows = original_read_flows
             pc.read_sockets = original_read_sockets
             pc.build_pid_map = original_pid_map
             pc.process_name = original_process_name
+            pc.process_command = original_process_command
+
+    def test_collector_accumulates_commands_separately(self):
+        collector = pc.Collector(interface="wlan0", interval=1)
+        sockets = {
+            "6": {
+                5678: ("192.168.1.100", 8080, "142.214.1.4", 443),
+                9999: ("192.168.1.100", 8081, "142.214.1.4", 443),
+            },
+            "17": {},
+        }
+        flow2 = TCP_FLOW.replace("sport=8080", "sport=8081").replace("dport=8080", "dport=8081")
+        original_read_flows = pc.read_flows
+        original_read_sockets = pc.read_sockets
+        original_pid_map = pc.build_pid_map
+        original_process_name = pc.process_name
+        original_process_command = pc.process_command
+        try:
+            pc.read_sockets = lambda: sockets
+            pc.build_pid_map = lambda: {5678: 1234, 9999: 5678}
+            pc.process_name = lambda pid: "uv"
+            pc.process_command = lambda pid: "uv add" if pid == 1234 else "uv sync"
+
+            def fake_flows_baseline():
+                return [pc.parse_conntrack_line(TCP_FLOW), pc.parse_conntrack_line(flow2)]
+
+            pc.read_flows = fake_flows_baseline
+            collector.sample()
+            self.assertEqual(collector.app_cum, {})
+
+            def fake_flows_delta():
+                line1 = TCP_FLOW.replace("bytes=1234", "bytes=3234").replace(
+                    "bytes=67890", "bytes=87890"
+                )
+                line2 = flow2.replace("bytes=1234", "bytes=2234").replace(
+                    "bytes=67890", "bytes=77890"
+                )
+                return [pc.parse_conntrack_line(line1), pc.parse_conntrack_line(line2)]
+
+            pc.read_flows = fake_flows_delta
+            collector.sample()
+            self.assertEqual(collector.app_cum["uv"]["sent"], 3000)
+            self.assertEqual(collector.app_cum["uv"]["recv"], 30000)
+            self.assertEqual(
+                collector.app_cum["uv"]["commands"]["uv add"], {"sent": 2000, "recv": 20000}
+            )
+            self.assertEqual(
+                collector.app_cum["uv"]["commands"]["uv sync"], {"sent": 1000, "recv": 10000}
+            )
+        finally:
+            pc.read_flows = original_read_flows
+            pc.read_sockets = original_read_sockets
+            pc.build_pid_map = original_pid_map
+            pc.process_name = original_process_name
+            pc.process_command = original_process_command
+
+
+class TestProcessCommand(unittest.TestCase):
+    def test_parses_basename_and_subcommand(self):
+        with mock.patch("builtins.open", return_value=BytesIO(b"uv\x00add\x00requests\x00\x00")):
+            self.assertEqual(pc.process_command(1234), "uv add")
+
+    def test_basename_of_full_path(self):
+        with mock.patch(
+            "builtins.open",
+            return_value=BytesIO(b"/usr/bin/uv\x00sync\x00\x00"),
+        ):
+            self.assertEqual(pc.process_command(1234), "uv sync")
+
+    def test_drops_flag_argument(self):
+        with mock.patch(
+            "builtins.open",
+            return_value=BytesIO(b"/usr/bin/python3\x00-m\x00pip\x00\x00"),
+        ):
+            self.assertEqual(pc.process_command(1234), "python3")
+
+    def test_falls_back_to_comm_when_cmdline_empty(self):
+        with (
+            mock.patch("builtins.open", return_value=BytesIO(b"")),
+            mock.patch.object(pc, "process_name", return_value="uv"),
+        ):
+            self.assertEqual(pc.process_command(1234), "uv")
+
+    def test_falls_back_to_comm_when_cmdline_unreadable(self):
+        with (
+            mock.patch("builtins.open", side_effect=OSError),
+            mock.patch.object(pc, "process_name", return_value="uv"),
+        ):
+            self.assertEqual(pc.process_command(1234), "uv")
 
 
 class TestPerappSnapshot(unittest.TestCase):

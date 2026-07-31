@@ -159,6 +159,40 @@ class TestTopAppsMode(WiFiTrackerBase):
         out = self.capture(self.tracker.top_apps_mode)
         self.assertIn("root conntrack collector", out)
 
+    @mock.patch(
+        "wifi_tracker_modules.cli.perapp.read_snapshot",
+        return_value={
+            "apps": {
+                "uv": {
+                    "sent": 3000,
+                    "recv": 30000,
+                    "commands": {
+                        "uv add": {"sent": 2000, "recv": 20000},
+                        "uv sync": {"sent": 1000, "recv": 10000},
+                    },
+                }
+            }
+        },
+    )
+    def test_shows_command_breakdown_for_app(self, mock_snapshot):
+        out = self.capture(self.tracker.top_apps_mode, "uv")
+        self.assertIn("uv add", out)
+        self.assertIn("uv sync", out)
+        self.assertNotIn("Data from root conntrack collector", out)
+
+    @mock.patch(
+        "wifi_tracker_modules.cli.perapp.read_snapshot",
+        return_value={"apps": {"firefox": {"recv": 100, "sent": 50}}},
+    )
+    def test_unknown_app_reports_not_found(self, mock_snapshot):
+        out = self.capture(self.tracker.top_apps_mode, "uv")
+        self.assertIn("not found in collector snapshot", out)
+
+    @mock.patch("wifi_tracker_modules.cli.perapp.read_snapshot", return_value=None)
+    def test_app_breakdown_requires_collector(self, mock_snapshot):
+        out = self.capture(self.tracker.top_apps_mode, "uv")
+        self.assertIn("requires the root collector", out)
+
 
 class TestPerappMode(WiFiTrackerBase):
     @mock.patch("wifi_tracker_modules.cli.perapp.is_root", return_value=True)
@@ -272,6 +306,14 @@ class TestMain(unittest.TestCase):
         mock_tracker, _ = self.run_main(["today"])
         mock_tracker.return_value.monitor.get_measurement.return_value = None
         # today without connection prints message via real code path
+
+    def test_dispatch_top_apps_with_app(self):
+        mock_tracker, _ = self.run_main(["top-apps", "uv"])
+        mock_tracker.return_value.top_apps_mode.assert_called_once_with("uv")
+
+    def test_dispatch_top_apps_without_app(self):
+        mock_tracker, _ = self.run_main(["top-apps"])
+        mock_tracker.return_value.top_apps_mode.assert_called_once_with("")
 
 
 if __name__ == "__main__":

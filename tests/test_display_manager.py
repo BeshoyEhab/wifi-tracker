@@ -174,6 +174,38 @@ class TestPrintQuickStatus(unittest.TestCase):
         self.assertIn("firefox", out)
 
 
+class TestPrintAppCommands(unittest.TestCase):
+    def setUp(self):
+        self.dm = DisplayManager()
+
+    def capture(self, fn, *args, **kwargs):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            fn(*args, **kwargs)
+        return buf.getvalue()
+
+    def test_shows_all_commands_sorted_by_total(self):
+        out = self.capture(
+            self.dm.print_app_commands,
+            "uv",
+            {
+                "uv sync": {"sent": 1000, "recv": 10000},
+                "uv add": {"sent": 2000, "recv": 20000},
+            },
+        )
+        self.assertIn("uv add", out)
+        self.assertIn("uv sync", out)
+        # uv add total = 22000 -> 21.5 KB; uv sync total = 11000 -> 10.7 KB
+        self.assertIn("21.5 KB", out)
+        self.assertIn("10.7 KB", out)
+        # Larger total sorts first (uv add before uv sync)
+        self.assertLess(out.index("uv add"), out.index("uv sync"))
+
+    def test_empty_commands(self):
+        out = self.capture(self.dm.print_app_commands, "uv", {})
+        self.assertIn("No command data for uv", out)
+
+
 class TestJsonHelpers(unittest.TestCase):
     def setUp(self):
         self.dm = DisplayManager()
