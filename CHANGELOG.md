@@ -46,7 +46,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   and `main()` subcommand dispatch incl. alias resolution.
 - `tests/test_process_manager.py` (20 tests): PID file lifecycle, instance
   discovery, instance killing, systemd install/remove, process info, and top
-  network apps. Overall coverage improved from 48% to 58%.
+  network apps.
+- `tests/test_display_manager.py` (26 tests): byte/rate/duration formatting,
+  period usage calculation, watch display, ASCII graph, quick status, and JSON
+  output helpers.
+- `tests/test_alert_manager.py` (28 tests): size/window parsing, limit
+  thresholds (100%, 80%, reset), daily summary.
+- `tests/test_notification_manager.py` (19 tests): notification sending,
+  gateway trust and high-usage action prompts (notify-send.sh/zenity/fallback).
+  Overall coverage improved from 58% to 68%.
 
 ## [0.1.2] - 2026-07-23
 
